@@ -1,0 +1,6 @@
+{
+  "name": "Global Live Quiz System",
+  "description": "A real-time synchronized quiz system with advanced JSON category management and local server storage.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
