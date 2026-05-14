@@ -357,6 +357,7 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
 
   // Wrap store actions to prevent previews from pushing state to server
   const safeSetPhase = (p: Phase) => {
+    if (phase === p) return;
     if (isPreview) {
       setLocalPhase(p);
     } else {
@@ -365,10 +366,21 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
   };
 
   const safeSetCurrentIdx = (idx: number) => {
+    if (currentIdx === idx) return;
     if (isPreview) {
       setLocalCurrentIdx(idx);
     } else {
       setCurrentIdx(idx);
+    }
+  };
+
+  const safePushState = (patch: any) => {
+    if (isPreview) {
+      if (patch.phase !== undefined) setLocalPhase(patch.phase);
+      if (patch.currentIdx !== undefined) setLocalCurrentIdx(patch.currentIdx);
+      if (patch.timeLeft !== undefined) setLocalTimeLeft(patch.timeLeft);
+    } else {
+      store.pushState(patch);
     }
   };
 
@@ -384,6 +396,46 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
     const handleResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      // Unlock AudioContext
+      try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContext) {
+           const ctx = new AudioContext();
+           ctx.resume();
+        }
+      } catch (e) {
+        // ignore
+      }
+      
+      // Unlock SpeechSynthesis
+      try {
+        if (window.speechSynthesis) {
+           const utterance = new SpeechSynthesisUtterance('');
+           utterance.volume = 0;
+           window.speechSynthesis.speak(utterance);
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      window.removeEventListener('click', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
+      window.removeEventListener('touchstart', handleFirstInteraction);
+    };
+
+    window.addEventListener('click', handleFirstInteraction);
+    window.addEventListener('keydown', handleFirstInteraction);
+    window.addEventListener('touchstart', handleFirstInteraction);
+
+    return () => {
+      window.removeEventListener('click', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
+      window.removeEventListener('touchstart', handleFirstInteraction);
+    };
   }, []);
 
   // Fullscreen logic
@@ -451,8 +503,9 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
 
   // Sequence controller
   useEffect(() => {
+    if (phase !== 'reading') return;
+    
     let isActive = true;
-    safeSetPhase('reading');
     safeSetTimeLeft(timerDuration);
     setSelectedId(null);
 
@@ -528,7 +581,7 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
        isActive = false;
        if (!isPreview) window.speechSynthesis.cancel();
     };
-  }, [currentIdx, timerDuration, isPreview, speechEnabled]); // speechEnabled added to restart if toggled
+  }, [currentIdx, phase, timerDuration, isPreview, speechEnabled]); // Add phase and speechEnabled to dependencies
 
   // Timer Effect
   useEffect(() => {
@@ -635,8 +688,7 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
 
   const handleReveal = () => {
     if (isAnswered) return;
-    safeSetPhase('revealing');
-    safeSetTimeLeft(0);
+    safePushState({ phase: 'revealing', timeLeft: 0 });
   };
 
   const handleSkip = () => {
@@ -648,12 +700,12 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
     playSound('transition', speechEnabledRef.current);
     
     if (quizCompletionMode === 'stop' && currentIdx >= questions.length - 1) {
-       safeSetPhase('done');
+       safePushState({ phase: 'done' });
        return;
     }
     
-    safeSetPhase('done');
-    safeSetCurrentIdx(currentIdx >= questions.length - 1 ? 0 : currentIdx + 1);
+    const nextIdx = currentIdx >= questions.length - 1 ? 0 : currentIdx + 1;
+    safePushState({ phase: 'reading', currentIdx: nextIdx });
   };
 
   const handleOptionClick = (id: string) => {

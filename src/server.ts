@@ -90,7 +90,20 @@ async function startServer() {
   // Update Global Live State
   app.post('/api/state', async (req, res) => {
     const currentState = await readJson(STATE_FILE, {});
+    
+    // Deep merge to avoid deleting streaming settings
     const newState = { ...currentState, ...req.body };
+    if (currentState.streamingSettings && req.body.streamingSettings) {
+        newState.streamingSettings = {
+            ...currentState.streamingSettings,
+            ...req.body.streamingSettings,
+            theme: {
+                ...(currentState.streamingSettings.theme || {}),
+                ...(req.body.streamingSettings.theme || {})
+            }
+        };
+    }
+    
     await writeJson(STATE_FILE, newState);
     res.json(newState);
   });

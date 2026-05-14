@@ -209,17 +209,36 @@ export const useStore = create<AppState>()((set, get) => ({
         delete streamingSettingsToApply.themeMode;
       }
 
-      set({
-        ...streamingSettingsToApply,
-        currentIdx: (questions.length > 0 && serverState.currentIdx >= questions.length) ? 0 : serverState.currentIdx,
-        phase: serverState.phase,
-        timeLeft: finalTimeLeft,
-        isTimerPaused: serverState.isTimerPaused,
-        liveCategoryIds: activeIds,
-        narrationLanguage: serverState.narrationLanguage || 'hi',
-        ttsVoiceGender: serverState.ttsVoiceGender || 'female',
-        categories,
-        questions
+      set((prev) => {
+        const nextPartial: any = {
+          ...streamingSettingsToApply,
+          currentIdx: (questions.length > 0 && serverState.currentIdx >= questions.length) ? 0 : serverState.currentIdx,
+          phase: serverState.phase,
+          timeLeft: finalTimeLeft,
+          isTimerPaused: serverState.isTimerPaused,
+          narrationLanguage: serverState.narrationLanguage || 'hi',
+          ttsVoiceGender: serverState.ttsVoiceGender || 'female',
+        };
+
+        if (JSON.stringify(prev.liveCategoryIds) !== JSON.stringify(activeIds)) {
+          nextPartial.liveCategoryIds = activeIds;
+        }
+        if (JSON.stringify(prev.categories) !== JSON.stringify(categories)) {
+          nextPartial.categories = categories;
+        }
+        if (JSON.stringify(prev.questions) !== JSON.stringify(questions)) {
+          nextPartial.questions = questions;
+        }
+        
+        // Let's also check if streamingSettingsToApply actually changed anything
+        let hasChanges = Object.keys(nextPartial).some(key => {
+            if (typeof nextPartial[key] === 'object' && nextPartial[key] !== null) {
+               return JSON.stringify(prev[key as keyof AppState]) !== JSON.stringify(nextPartial[key]);
+            }
+            return prev[key as keyof AppState] !== nextPartial[key];
+        });
+
+        return hasChanges ? nextPartial : prev;
       });
     } catch (e) {
       console.error('Failed to sync state:', e);
@@ -252,14 +271,15 @@ export const useStore = create<AppState>()((set, get) => ({
       if (Object.keys(streamingSettingsPatch).length > 0) {
         serverPatch.streamingSettings = streamingSettingsPatch;
       }
+      
+      // Optimistic update
+      set(patch as any);
 
       await fetch(`${API_BASE}/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(serverPatch)
       });
-      
-      set(patch as any);
     } catch (e) {
       console.error('Failed to push state:', e);
     }
