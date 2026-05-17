@@ -3,18 +3,22 @@ import { createServer as createViteServer } from 'vite';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createHash } from 'crypto';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DATA_DIR = path.join(__dirname, 'data');
 const CATEGORIES_DIR = path.join(DATA_DIR, 'categories');
 const SETTINGS_DIR = path.join(DATA_DIR, 'settings');
+const TTS_CACHE_DIR = path.join(DATA_DIR, 'tts_cache');
 const STATE_FILE = path.join(SETTINGS_DIR, 'live-state.json');
 
 async function ensureDirs() {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.mkdir(CATEGORIES_DIR, { recursive: true });
   await fs.mkdir(SETTINGS_DIR, { recursive: true });
+  await fs.mkdir(TTS_CACHE_DIR, { recursive: true });
 }
 
 async function readJson(file: string, defaultValue: any) {
@@ -40,6 +44,61 @@ async function startServer() {
 
   // API Routes
   
+  app.use('/tts_cache', express.static(TTS_CACHE_DIR));
+
+  // TTS Endpoint
+  app.post('/api/tts', async (req, res) => {
+    try {
+      const { text, lang, gender, rate = 1.0, volume = 1.0 } = req.body;
+      if (!text) {
+         res.status(400).json({ error: 'Text is required' });
+         return;
+      }
+      
+      let voiceName = 'en-US-JennyNeural'; // Default
+      if (lang === 'hi') {
+         voiceName = gender === 'male' ? 'hi-IN-MadhurNeural' : 'hi-IN-SwaraNeural';
+      } else {
+         voiceName = gender === 'male' ? 'en-US-GuyNeural' : 'en-US-JennyNeural';
+      }
+
+      // Hash attributes to generate unique filename
+      const hashInput = `${text}-${voiceName}-${rate}-${volume}`;
+      const hash = createHash('md5').update(hashInput).digest('hex');
+      const filename = `${hash}.mp3`;
+      const filepath = path.join(TTS_CACHE_DIR, filename);
+
+      try {
+         await fs.access(filepath);
+         // Exists in cache
+         res.json({ url: `/tts_cache/${filename}` });
+         return;
+      } catch (err) {
+         // Doesn't exist, we must generate
+      }
+
+      const tts = new MsEdgeTTS();
+      await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      
+      let rateStr = '0%';
+      if (rate !== 1.0) {
+          const diff = Math.round((rate - 1.0) * 100);
+          rateStr = diff > 0 ? `+${diff}%` : `${diff}%`;
+      }
+      let volStr = '0%';
+      if (volume !== 1.0) {
+          const diff = Math.round((volume - 1.0) * 100);
+          volStr = diff > 0 ? `+${diff}%` : `${diff}%`;
+      }
+
+      const { audioFilePath } = await tts.toFile(filepath, text, { rate: rateStr, volume: volStr, pitch: '+0Hz' });
+      res.json({ url: `/tts_cache/${filename}` });
+    } catch (e: any) {
+      console.error("TTS generation error:", e);
+      res.status(500).json({ error: e.message || 'TTS generation failed' });
+    }
+  });
+
   // Get Global Live State
   app.get('/api/state', async (req, res) => {
     const state = await readJson(STATE_FILE, {

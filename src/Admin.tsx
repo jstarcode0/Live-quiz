@@ -311,6 +311,30 @@ function LiveControlTab() {
              </label>
              
              <div>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Narration Language</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => store.setNarrationLanguage('hi')} className={`p-2 rounded-lg text-sm font-bold transition-all ${store.narrationLanguage === 'hi' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>HINDI (hi-IN)</button>
+                  <button onClick={() => store.setNarrationLanguage('en')} className={`p-2 rounded-lg text-sm font-bold transition-all ${store.narrationLanguage === 'en' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>ENGLISH (en-US)</button>
+                </div>
+             </div>
+
+             <div>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Voice Gender</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => store.setTtsVoiceGender('female')} className={`p-2 rounded-lg text-sm font-bold transition-all ${store.ttsVoiceGender === 'female' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>FEMALE (Swara/Jenny)</button>
+                  <button onClick={() => store.setTtsVoiceGender('male')} className={`p-2 rounded-lg text-sm font-bold transition-all ${store.ttsVoiceGender === 'male' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>MALE (Madhur/Guy)</button>
+                </div>
+             </div>
+             
+             <div>
+                <label className="block text-sm font-bold text-slate-300 mb-2">Voice Mode</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => store.setVoiceMode('browser')} className={`p-2 rounded-lg text-[10px] font-bold transition-all ${store.voiceMode === 'browser' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>BROWSER TTS</button>
+                  <button onClick={() => store.setVoiceMode('edge-tts')} className={`p-2 rounded-lg text-[10px] font-bold transition-all ${store.voiceMode === 'edge-tts' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>EDGE-TTS (MP3)</button>
+                </div>
+             </div>
+
+             <div>
                 <div className="flex justify-between text-sm mb-2 font-bold text-slate-300">
                    <span>Speech Rate</span>
                    <span className="text-cyan-400">{store.ttsRate}x</span>
@@ -776,6 +800,33 @@ function SettingsTab() {
                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:border-cyan-500 outline-none transition-all text-sm" 
                />
             </div>
+            <div>
+               <label className="block text-[10px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Banner Text</label>
+               <input 
+                 type="text" 
+                 value={store.bannerText}
+                 onChange={(e) => store.updateBranding({ bannerText: e.target.value })}
+                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:border-cyan-500 outline-none transition-all text-sm" 
+               />
+            </div>
+            <div>
+               <label className="block text-[10px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Telegram Text</label>
+               <input 
+                 type="text" 
+                 value={store.telegramText}
+                 onChange={(e) => store.updateBranding({ telegramText: e.target.value })}
+                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:border-cyan-500 outline-none transition-all text-sm" 
+               />
+            </div>
+            <div>
+               <label className="block text-[10px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Motivational Text</label>
+               <input 
+                 type="text" 
+                 value={store.motivationalText}
+                 onChange={(e) => store.updateBranding({ motivationalText: e.target.value })}
+                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-white focus:border-cyan-500 outline-none transition-all text-sm" 
+               />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Default Timer (s)</label>
@@ -802,162 +853,38 @@ function SettingsTab() {
                <div className="grid grid-cols-2 gap-3">
                   <button 
                     onClick={() => {
-                        store.pushState({ 
-                          themeMode: 'cyan-default',
-                          theme: {
-                            ...store.theme,
-                            bgPrimary: '#020617',
-                            bgSecondary: '#000000',
-                            textPrimary: '#f8fafc',
-                            textSecondary: '#64748b',
-                            accentColor: '#22d3ee',
-                            timerColor: '#ef4444',
-                            correctColor: '#22c55e',
-                            wrongColor: '#ef4444',
-                            explanationBg: '#0f172a',
-                            explanationText: '#f8fafc',
-                            headerBg: '#000000',
-                            headerText: '#f8fafc',
-                            footerBg: '#000000',
-                            footerText: '#334155',
-                            progressBarColor: '#22d3ee',
-                            glowColor: '#1e3a8a',
-                            liveBadgeColor: '#f43f5e',
-                            neonIntensity: 0.5
-                          }
-                        });
+                        store.pushState({ themeMode: 'PREMIUM_BROADCAST' });
                     }}
-                    className={`py-3 rounded-xl border-2 font-bold text-[10px] transition-all ${['dark', 'cyan-default'].includes(store.themeMode) ? 'bg-cyan-600 text-white border-cyan-400 shadow-lg shadow-cyan-900/40' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
+                    className={`py-3 rounded-xl border-2 font-bold text-[10px] transition-all ${['dark', 'cyan-default', 'PREMIUM_BROADCAST'].includes(store.themeMode) ? 'bg-cyan-600 text-white border-cyan-400 shadow-lg shadow-cyan-900/40' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
                   >
-                    CLASSIC SSC STREAM
+                    PREMIUM BROADCAST
                   </button>
                   
                   <button 
                     onClick={() => {
-                        store.pushState({ 
-                          themeMode: 'neon-purple',
-                          theme: {
-                            ...store.theme,
-                            bgPrimary: '#1a0b2e',
-                            bgSecondary: '#0f0518',
-                            textPrimary: '#fdf4ff',
-                            textSecondary: '#d8b4fe',
-                            accentColor: '#c026d3',
-                            timerColor: '#e11d48',
-                            correctColor: '#22c55e',
-                            wrongColor: '#ef4444',
-                            explanationBg: '#2e1065',
-                            explanationText: '#fdf4ff',
-                            headerBg: '#000000',
-                            headerText: '#fdf4ff',
-                            footerBg: '#000000',
-                            footerText: '#c026d3',
-                            progressBarColor: '#c026d3',
-                            glowColor: '#701a75',
-                            liveBadgeColor: '#f472b6',
-                            neonIntensity: 0.7
-                          }
-                        });
+                        store.pushState({ themeMode: 'SSC_SMARTBOARD' });
                     }}
-                    className={`py-3 rounded-xl border-2 font-bold text-[10px] transition-all ${store.themeMode === 'neon-purple' ? 'bg-purple-600 text-white border-purple-400 shadow-lg shadow-purple-900/40' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
+                    className={`py-3 rounded-xl border-2 font-bold text-[10px] transition-all ${store.themeMode === 'SSC_SMARTBOARD' ? 'bg-yellow-600 text-white border-yellow-400 shadow-lg shadow-yellow-900/40' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
                   >
-                    CYBERPUNK LIVE
+                    SSC SMARTBOARD
                   </button>
 
                   <button 
                     onClick={() => {
-                        store.pushState({ 
-                          themeMode: 'tv-news',
-                          theme: {
-                            ...store.theme,
-                            bgPrimary: '#020617', // Very dark slate (near black)
-                            bgSecondary: '#1e293b', // Option cards - slate 800
-                            textPrimary: '#ffffff', // White question text
-                            textSecondary: '#cbd5e1', // Slate 300 for subtiles
-                            accentColor: '#3b82f6', // Bold News Blue
-                            timerColor: '#ef4444', // Red timer
-                            correctColor: '#22c55e', // Green
-                            wrongColor: '#ef4444', // Red
-                            explanationBg: '#0f172a', // Slate 900
-                            explanationText: '#f8fafc',
-                            headerBg: '#1d4ed8', // Blue 700 header
-                            headerText: '#ffffff',
-                            footerBg: '#b91c1c', // Red footer (ticker tape)
-                            footerText: '#ffffff',
-                            progressBarColor: '#3b82f6',
-                            glowColor: '#1e40af', // Blue glow
-                            liveBadgeColor: '#ef4444', // Red live badge
-                            neonIntensity: 0.2
-                          }
-                        });
+                        store.pushState({ themeMode: 'EXAM_GK_SLIDE' });
                     }}
-                    className={`py-3 rounded-xl border-2 font-bold text-[10px] transition-all ${store.themeMode === 'tv-news' ? 'bg-blue-600 text-white border-blue-400 shadow-lg shadow-blue-900/40' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
+                    className={`py-3 rounded-xl border-2 font-bold text-[10px] transition-all ${store.themeMode === 'EXAM_GK_SLIDE' ? 'bg-blue-600 text-white border-blue-400 shadow-lg shadow-blue-900/40' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
                   >
-                    TV NEWS BROADCAST
+                    EXAM GK SLIDE
                   </button>
 
                   <button 
                     onClick={() => {
-                        store.pushState({ 
-                          themeMode: 'glass-premium',
-                          theme: {
-                            ...store.theme,
-                            bgPrimary: '#020617',
-                            bgSecondary: '#ffffff', // Used for glass opacity in QuizView
-                            textPrimary: '#ffffff',
-                            textSecondary: '#cbd5e1',
-                            accentColor: '#818cf8',
-                            timerColor: '#f87171',
-                            correctColor: '#34d399',
-                            wrongColor: '#f87171',
-                            explanationBg: '#ffffff',
-                            explanationText: '#f8fafc',
-                            headerBg: '#ffffff',
-                            headerText: '#ffffff',
-                            footerBg: '#ffffff',
-                            footerText: '#818cf8',
-                            progressBarColor: '#818cf8',
-                            glowColor: '#4f46e5',
-                            liveBadgeColor: '#fb7185',
-                            neonIntensity: 0.3
-                          }
-                        });
+                        store.pushState({ themeMode: 'KBC_STYLE' });
                     }}
-                    className={`py-3 rounded-xl border-2 font-bold text-[10px] transition-all ${store.themeMode === 'glass-premium' ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg shadow-indigo-900/40' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
+                    className={`py-3 rounded-xl border-2 font-bold text-[10px] transition-all ${store.themeMode === 'KBC_STYLE' ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg shadow-indigo-900/40' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
                   >
-                    GLASS PREMIUM
-                  </button>
-
-                  <button 
-                    onClick={() => {
-                        store.pushState({ 
-                          themeMode: 'red-stream',
-                          theme: {
-                            ...store.theme,
-                            bgPrimary: '#200000',
-                            bgSecondary: '#0a0000',
-                            textPrimary: '#fef2f2',
-                            textSecondary: '#fca5a5',
-                            accentColor: '#ef4444',
-                            timerColor: '#b91c1c',
-                            correctColor: '#22c55e',
-                            wrongColor: '#f87171',
-                            explanationBg: '#450a0a',
-                            explanationText: '#fef2f2',
-                            headerBg: '#000000',
-                            headerText: '#fef2f2',
-                            footerBg: '#000000',
-                            footerText: '#b91c1c',
-                            progressBarColor: '#ef4444',
-                            glowColor: '#7f1d1d',
-                            liveBadgeColor: '#ef4444',
-                            neonIntensity: 0.6
-                          }
-                        });
-                    }}
-                    className={`py-3 rounded-xl border-2 font-bold text-[10px] transition-all ${store.themeMode === 'red-stream' ? 'bg-red-600 text-white border-red-400 shadow-lg shadow-red-900/40' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
-                  >
-                    RED ESPORTS
+                    KBC STYLE QUIZ
                   </button>
                </div>
             </div>

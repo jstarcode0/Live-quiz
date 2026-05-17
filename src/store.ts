@@ -27,6 +27,7 @@ export interface AppState {
   liveCategoryIds: string[];
   narrationLanguage: 'hi' | 'en';
   ttsVoiceGender: 'male' | 'female';
+  voiceMode: 'browser' | 'edge-tts';
   currentIdx: number;
   phase: 'reading' | 'waiting' | 'revealing' | 'done';
   timeLeft: number;
@@ -41,6 +42,9 @@ export interface AppState {
   liveBadgeText: string;
   logoUrl: string;
   footerText: string;
+  telegramText: string;
+  bannerText: string;
+  motivationalText: string;
   globalTimerDuration: number;
   isTimerPaused: boolean;
   quizCompletionMode: 'loop' | 'stop';
@@ -67,7 +71,7 @@ export interface AppState {
     neonIntensity: number;
     timerStartTime: number | null;
   };
-  themeMode: 'light' | 'dark' | 'cyan-default' | 'neon-purple' | 'tv-news' | 'glass-premium' | 'red-stream';
+  themeMode: 'light' | 'dark' | 'PREMIUM_BROADCAST' | 'SSC_SMARTBOARD' | 'EXAM_GK_SLIDE' | 'KBC_STYLE';
 
   // Admin Specific (Client-side mainly, except for fetching questions)
   adminSelectedCategoryId: string;
@@ -80,6 +84,7 @@ export interface AppState {
   toggleLiveCategory: (id: string) => Promise<void>;
   setNarrationLanguage: (lang: 'hi' | 'en') => void;
   setTtsVoiceGender: (gender: 'male' | 'female') => void;
+  setVoiceMode: (mode: 'browser' | 'edge-tts') => void;
   setAdminSelectedCategoryId: (id: string) => void;
   setCurrentIdx: (idx: number) => void;
   setPhase: (phase: 'reading' | 'waiting' | 'revealing' | 'done') => void;
@@ -117,6 +122,7 @@ export const useStore = create<AppState>()((set, get) => ({
   liveCategoryIds: ['default'],
   narrationLanguage: 'hi',
   ttsVoiceGender: 'female',
+  voiceMode: 'browser',
   currentIdx: 0,
   phase: 'reading',
   timeLeft: 15,
@@ -132,6 +138,9 @@ export const useStore = create<AppState>()((set, get) => ({
   liveBadgeText: 'LIVE',
   logoUrl: '',
   footerText: 'System Ops: Nominal | Broadcast Res: 1080P60 | Latency: 12ms',
+  telegramText: 'Join Telegram: @ssc_live',
+  bannerText: 'Welcome to Live SSC Mock Test!',
+  motivationalText: 'Keep Learning, Keep Growing',
   globalTimerDuration: 15,
   isTimerPaused: false,
   quizCompletionMode: 'loop',
@@ -157,7 +166,7 @@ export const useStore = create<AppState>()((set, get) => ({
     neonIntensity: 0.5,
     timerStartTime: null,
   },
-  themeMode: 'light',
+  themeMode: 'PREMIUM_BROADCAST',
 
   adminSelectedCategoryId: 'default',
   adminQuestions: [],
@@ -218,6 +227,7 @@ export const useStore = create<AppState>()((set, get) => ({
           isTimerPaused: serverState.isTimerPaused,
           narrationLanguage: serverState.narrationLanguage || 'hi',
           ttsVoiceGender: serverState.ttsVoiceGender || 'female',
+          voiceMode: serverState.voiceMode || 'browser',
         };
 
         if (JSON.stringify(prev.liveCategoryIds) !== JSON.stringify(activeIds)) {
@@ -250,9 +260,10 @@ export const useStore = create<AppState>()((set, get) => ({
       const serverPatch: any = {};
       const streamingKeys = [
         'streamTitle', 'sscTitle', 'headerText', 'viewerCount', 'liveBadgeText',
-        'logoUrl', 'footerText', 'globalTimerDuration', 'quizCompletionMode',
+        'logoUrl', 'footerText', 'telegramText', 'bannerText', 'motivationalText',
+        'globalTimerDuration', 'quizCompletionMode',
         'speechEnabled', 'humanExpressionsEnabled', 'ttsRate', 'ttsVolume',
-        'narrationLanguage', 'ttsVoiceGender', 'theme', 'themeMode'
+        'narrationLanguage', 'ttsVoiceGender', 'voiceMode', 'theme', 'themeMode'
       ];
 
       const streamingSettingsPatch: any = {};
@@ -261,6 +272,7 @@ export const useStore = create<AppState>()((set, get) => ({
           streamingSettingsPatch[key] = (patch as any)[key];
           if (key === 'narrationLanguage') serverPatch.narrationLanguage = (patch as any)[key];
           if (key === 'ttsVoiceGender') serverPatch.ttsVoiceGender = (patch as any)[key];
+          if (key === 'voiceMode') serverPatch.voiceMode = (patch as any)[key];
         } else if (key === 'liveCategoryIds') {
            serverPatch.activeCategoryIds = (patch as any).liveCategoryIds;
         } else {
@@ -303,6 +315,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   setNarrationLanguage: (lang) => get().pushState({ narrationLanguage: lang }),
   setTtsVoiceGender: (gender: 'male' | 'female') => get().pushState({ ttsVoiceGender: gender }),
+  setVoiceMode: (mode: 'browser' | 'edge-tts') => get().pushState({ voiceMode: mode }),
 
   setAdminSelectedCategoryId: (id) => {
     set({ adminSelectedCategoryId: id });
