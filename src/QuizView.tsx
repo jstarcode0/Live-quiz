@@ -249,12 +249,12 @@ const speakBrowserPromise = (text: string, rate: number, volume: number, lang: '
       utterance.volume = volume;
       
       let resolved = false;
-      let timeoutId: any;
-      
+      let fallbackTimeout: any;
+
       const finish = () => {
          if (!resolved) {
             resolved = true;
-            clearTimeout(timeoutId);
+            clearTimeout(fallbackTimeout);
             activeUtterances.delete(utterance);
             resolve();
          }
@@ -264,13 +264,12 @@ const speakBrowserPromise = (text: string, rate: number, volume: number, lang: '
       utterance.onend = finish;
       utterance.onerror = finish;
       
-      // Browser TTS duration is rough estimate
-      const estimatedDuration = (text.length * 90) / rate / 1000;
-      setTimeout(() => onLoaded(Math.max(1, estimatedDuration)), 10);
-
-      timeoutId = setTimeout(finish, (text.length * 90) / rate + 3000);
+      fallbackTimeout = setTimeout(finish, (text.length * 100) / rate + 15000); // Generous fallback timeout
       
-      window.speechSynthesis.speak(utterance);
+      setTimeout(() => {
+          console.log(`Speaking (Browser TTS): ${text.substring(0, 50)}...`);
+          window.speechSynthesis.speak(utterance);
+      }, 50);
    });
 };
 
@@ -650,38 +649,27 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
         const fullText = textParts.join(' ');
         
         if (!isPreview) {
-            safeSetPhase('waiting');
-            let hasStartedTimer = false;
+            console.log("Playing question narration...");
             
-            await speakMergedPromise(fullText, ttsRateRef.current, ttsVolumeRef.current, lang, gender, currentVoiceMode, (duration) => {
-                if (isActive) {
-                    const mathDuration = Math.ceil(duration) + 1; // +1s buffer
-                    const finalDuration = Math.max(timerDuration, mathDuration);
-                    console.log("Audio Dur:", duration, "Final Timer:", finalDuration);
-                    
-                    hasStartedTimer = true;
-                    // Start timer immediately over the backend
-                    store.pushState({ 
-                       phase: 'waiting',
-                       theme: { ...theme, timerStartTime: Date.now() },
-                       timeLeft: finalDuration,
-                       globalTimerDuration: finalDuration
-                    });
-                }
+            // Wait for speech to complete entirely
+            await speakMergedPromise(fullText, ttsRateRef.current, ttsVolumeRef.current, lang, gender, currentVoiceMode, () => {
+                 // Ignore early duration callback to enforce strict sequential queue
             });
             
-            // Fallback if the duration event didn't fire
-            if (isActive && !hasStartedTimer) {
+            if (isActive) {
+                console.log("Question narration finished. Starting timer.");
+                safeSetPhase('waiting');
                 store.pushState({ 
                    phase: 'waiting',
                    theme: { ...theme, timerStartTime: Date.now() },
-                   timeLeft: timerDuration
+                   timeLeft: timerDuration,
+                   globalTimerDuration: timerDuration
                 });
             }
         } else {
             // In preview mode
-            safeSetPhase('waiting');
             await new Promise(r => setTimeout(r, 2000));
+            if (isActive) safeSetPhase('waiting');
         }
     };
     runReading();

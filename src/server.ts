@@ -1,6 +1,7 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import fs from 'fs/promises';
+import fsPromises from 'fs/promises';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
@@ -15,15 +16,15 @@ const TTS_CACHE_DIR = path.join(DATA_DIR, 'tts_cache');
 const STATE_FILE = path.join(SETTINGS_DIR, 'live-state.json');
 
 async function ensureDirs() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.mkdir(CATEGORIES_DIR, { recursive: true });
-  await fs.mkdir(SETTINGS_DIR, { recursive: true });
-  await fs.mkdir(TTS_CACHE_DIR, { recursive: true });
+  await fsPromises.mkdir(DATA_DIR, { recursive: true });
+  await fsPromises.mkdir(CATEGORIES_DIR, { recursive: true });
+  await fsPromises.mkdir(SETTINGS_DIR, { recursive: true });
+  await fsPromises.mkdir(TTS_CACHE_DIR, { recursive: true });
 }
 
 async function readJson(file: string, defaultValue: any) {
   try {
-    const data = await fs.readFile(file, 'utf-8');
+    const data = await fsPromises.readFile(file, 'utf-8');
     return JSON.parse(data);
   } catch (e) {
     return defaultValue;
@@ -31,7 +32,7 @@ async function readJson(file: string, defaultValue: any) {
 }
 
 async function writeJson(file: string, data: any) {
-  await fs.writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
+  await fsPromises.writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 async function startServer() {
@@ -69,7 +70,7 @@ async function startServer() {
       const filepath = path.join(TTS_CACHE_DIR, filename);
 
       try {
-         await fs.access(filepath);
+         await fsPromises.access(filepath);
          // Exists in cache
          res.json({ url: `/tts_cache/${filename}` });
          return;
@@ -91,7 +92,15 @@ async function startServer() {
           volStr = diff > 0 ? `+${diff}%` : `${diff}%`;
       }
 
-      const { audioFilePath } = await tts.toFile(filepath, text, { rate: rateStr, volume: volStr, pitch: '+0Hz' });
+      const { audioStream } = await tts.toStream(text, { rate: rateStr, volume: volStr, pitch: '+0Hz' });
+      await new Promise<void>((resolve, reject) => {
+         const fileStream = fs.createWriteStream(filepath);
+         audioStream.pipe(fileStream);
+         fileStream.on('finish', resolve);
+         fileStream.on('error', reject);
+         audioStream.on('error', reject);
+      });
+      
       res.json({ url: `/tts_cache/${filename}` });
     } catch (e: any) {
       console.error("TTS generation error:", e);
@@ -170,13 +179,13 @@ async function startServer() {
   // List Categories
   app.get('/api/categories', async (req, res) => {
     try {
-      const files = await fs.readdir(CATEGORIES_DIR);
+      const files = await fsPromises.readdir(CATEGORIES_DIR);
       const categories = await Promise.all(files
         .filter(f => f.endsWith('.json'))
         .map(async f => {
           const filePath = path.join(CATEGORIES_DIR, f);
           const content = await readJson(filePath, []);
-          const stats = await fs.stat(filePath);
+          const stats = await fsPromises.stat(filePath);
           return {
             id: f.replace('.json', ''),
             name: f.replace('.json', '').replace(/-/g, ' ').toUpperCase(),
@@ -206,7 +215,7 @@ async function startServer() {
     
     // If file doesn't exist, create it with empty array
     try {
-      await fs.access(filePath);
+      await fsPromises.access(filePath);
     } catch (e) {
       await writeJson(filePath, []);
     }
@@ -219,7 +228,7 @@ async function startServer() {
     const id = req.params.id;
     const filePath = path.join(CATEGORIES_DIR, `${id}.json`);
     try {
-      await fs.unlink(filePath);
+      await fsPromises.unlink(filePath);
       res.json({ success: true });
     } catch (e) {
       res.status(500).json({ error: 'Failed to delete' });
