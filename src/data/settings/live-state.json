@@ -1,0 +1,35 @@
+{
+  "phase": "waiting",
+  "timeLeft": 15,
+  "streamingSettings": {
+    "theme": {
+      "bgPrimary": "#050505",
+      "bgSecondary": "#020202",
+      "textPrimary": "#ffffff",
+      "textSecondary": "#94a3b8",
+      "accentColor": "#0ea5e9",
+      "timerColor": "#ef4444",
+      "correctColor": "#22c55e",
+      "wrongColor": "#ef4444",
+      "explanationBg": "#0f172a",
+      "explanationText": "#f8fafc",
+      "headerBg": "#000000",
+      "headerText": "#ffffff",
+      "footerBg": "#000000",
+      "footerText": "#64748b",
+      "progressBarColor": "#0ea5e9",
+      "glowColor": "#0ea5e9",
+      "liveBadgeColor": "#ef4444",
+      "neonIntensity": 0.5,
+      "timerStartTime": 1779069305189
+    },
+    "globalTimerDuration": 15,
+    "ytLiveState": {
+      "isActive": true,
+      "currentLessonId": "lesson-1779063686718",
+      "currentSectionIdx": 0,
+      "phase": "typing"
+    }
+  },
+  "currentIdx": 0
+}

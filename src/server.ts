@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import streamControlRoutes from './streamControlRoutes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -13,6 +14,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const CATEGORIES_DIR = path.join(DATA_DIR, 'categories');
 const SETTINGS_DIR = path.join(DATA_DIR, 'settings');
 const TTS_CACHE_DIR = path.join(DATA_DIR, 'tts_cache');
+const YT_NOTES_DIR = path.join(DATA_DIR, 'yt-notes');
 const STATE_FILE = path.join(SETTINGS_DIR, 'live-state.json');
 
 async function ensureDirs() {
@@ -20,6 +22,7 @@ async function ensureDirs() {
   await fsPromises.mkdir(CATEGORIES_DIR, { recursive: true });
   await fsPromises.mkdir(SETTINGS_DIR, { recursive: true });
   await fsPromises.mkdir(TTS_CACHE_DIR, { recursive: true });
+  await fsPromises.mkdir(YT_NOTES_DIR, { recursive: true });
 }
 
 async function readJson(file: string, defaultValue: any) {
@@ -30,6 +33,8 @@ async function readJson(file: string, defaultValue: any) {
     return defaultValue;
   }
 }
+
+import { setupWebSocketTerminals } from './terminals.js';
 
 async function writeJson(file: string, data: any) {
   await fsPromises.writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
@@ -235,6 +240,62 @@ async function startServer() {
     }
   });
 
+  // ==========================================
+  // YT NOTES API
+  // ==========================================
+  
+  app.get('/api/yt-notes/lessons', async (req, res) => {
+    try {
+      const files = await fsPromises.readdir(YT_NOTES_DIR);
+      const lessons = await Promise.all(files
+        .filter(f => f.endsWith('.json'))
+        .map(async f => {
+          const filePath = path.join(YT_NOTES_DIR, f);
+          const content = await readJson(filePath, null);
+          return content;
+        })
+      );
+      res.json(lessons.filter(l => l !== null));
+    } catch (e) {
+      res.json([]);
+    }
+  });
+
+  app.get('/api/yt-notes/lessons/:id', async (req, res) => {
+    const filePath = path.join(YT_NOTES_DIR, `${req.params.id}.json`);
+    try {
+      const data = await readJson(filePath, null);
+      if (data) {
+        res.json(data);
+      } else {
+        res.status(404).json({ error: 'Lesson not found' });
+      }
+    } catch (e) {
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
+  app.post('/api/yt-notes/lessons/:id', async (req, res) => {
+    const id = req.params.id;
+    const filePath = path.join(YT_NOTES_DIR, `${id}.json`);
+    try {
+      await writeJson(filePath, req.body);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to save lesson' });
+    }
+  });
+
+  app.delete('/api/yt-notes/lessons/:id', async (req, res) => {
+    const filePath = path.join(YT_NOTES_DIR, `${req.params.id}.json`);
+    try {
+      await fsPromises.unlink(filePath);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to delete lesson' });
+    }
+  });
+
   // Get Questions for Category
   app.get('/api/questions/:categoryId', async (req, res) => {
     const categoryId = req.params.categoryId;
@@ -266,6 +327,9 @@ async function startServer() {
     res.json(allQuestions);
   });
 
+  // Mount Stream Control routes
+  app.use('/api/stream', streamControlRoutes);
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -281,9 +345,11 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  setupWebSocketTerminals(server);
 }
 
 startServer();

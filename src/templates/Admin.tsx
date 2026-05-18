@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useStore, Question, Category } from './store';
+import { useStore, Question, Category } from '../store';
 import { 
   Settings, List, PlayCircle, LogOut, CheckCircle, Save, Plus, Trash2, 
   Edit2, Volume2, ArrowUp, ArrowDown, Copy as IconCopy, Database, 
@@ -7,7 +7,7 @@ import {
   Tv, Info, XCircle, CheckCircle2, SkipForward, ArrowRight, Radio, Users, VolumeX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import QuizView from './QuizView';
+import QuizView from '../QuizView';
 
 const Login = ({ onLogin }: { onLogin: () => void }) => {
   const [username, setUsername] = useState('');

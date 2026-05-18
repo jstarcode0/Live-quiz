@@ -763,11 +763,17 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
                  const label = lang === 'hi' ? 'विकल्प' : 'Option';
                  const optValue = lang === 'hi' ? correctOpt.hi : correctOpt.en;
                  textParts.push(`${label} ${correctOpt.id}. ${optValue}.`);
+                 if (question.explanation) {
+                     textParts.push(question.explanation[lang] || question.explanation.en);
+                 }
               }
               const fullText = textParts.join(' ');
               
               if (!isPreview) {
+                 console.log("Answer narration started.");
                  await speakMergedPromise(fullText, ttsRateRef.current, ttsVolumeRef.current, lang, gender, currentVoiceMode, () => {});
+                 console.log("Answer narration completed. Waiting buffer.");
+                 await new Promise(r => setTimeout(r, 1500));
               } else {
                  await new Promise(r => setTimeout(r, 2000));
               }
@@ -775,10 +781,13 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
               await new Promise(r => setTimeout(r, 1000));
           }
           if (isActive) {
+              console.log("Next question triggered.");
               const delay = quizCompletionMode === 'stop' && currentIdx >= questions.length - 1 ? 5000 : AUTO_NEXT_DELAY;
-              setTimeout(() => {
-                   if (isActive) handleNext();
-              }, isPreview ? 3000 : delay);
+              if (isPreview) {
+                 setTimeout(() => { if (isActive) handleNext(); }, 3000);
+              } else {
+                 handleNext();
+              }
           }
       };
       

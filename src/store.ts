@@ -20,6 +20,35 @@ export interface Category {
   lastUpdated?: string;
 }
 
+export interface YTSection {
+  id: string;
+  title: string;
+  content: string;
+  speak: boolean;
+  typingSpeed: number;
+  pauseAfter: number;
+  highlightWords: string[];
+  tables?: any[];
+}
+
+export interface YTLesson {
+  id: string;
+  topic: string;
+  category: string;
+  language: 'hi' | 'en';
+  voice: string;
+  boardStyle: 'black' | 'green' | 'smart';
+  typingStyle: 'slow' | 'coaching' | 'exam' | 'fast' | 'detailed';
+  sections: YTSection[];
+}
+
+export interface YTLiveState {
+  isActive: boolean;
+  currentLessonId: string | null;
+  currentSectionIdx: number;
+  phase: 'idle' | 'typing' | 'paused' | 'done';
+}
+
 export interface AppState {
   // Live State
   questions: Question[];
@@ -109,6 +138,10 @@ export interface AppState {
   reorderQuestion: (id: string | number, direction: 'up' | 'down') => void;
   deleteCategory: (id: string) => Promise<void>;
 
+  // YTNotes State
+  ytLiveState: YTLiveState;
+  pushYTLiveState: (patch: Partial<YTLiveState>) => Promise<void>;
+
   // Global Sync
   refreshState: () => Promise<void>;
   pushState: (patch: Partial<AppState>) => Promise<void>;
@@ -145,6 +178,13 @@ export const useStore = create<AppState>()((set, get) => ({
   isTimerPaused: false,
   quizCompletionMode: 'loop',
 
+  ytLiveState: {
+    isActive: false,
+    currentLessonId: null,
+    currentSectionIdx: 0,
+    phase: 'idle'
+  },
+
   theme: {
     bgPrimary: '#050505',
     bgSecondary: '#020202',
@@ -174,14 +214,29 @@ export const useStore = create<AppState>()((set, get) => ({
   refreshState: async () => {
     try {
       const stateRes = await fetch(`${API_BASE}/state`);
+      if (!stateRes.ok) throw new Error(`State fetch failed: ${stateRes.status}`);
+      const contentType = stateRes.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Oops, we haven't received JSON!");
+      }
       const serverState = await stateRes.json();
       
       const catsRes = await fetch(`${API_BASE}/categories`);
+      if (!catsRes.ok) throw new Error(`Categories fetch failed: ${catsRes.status}`);
+      const catsContentType = catsRes.headers.get("content-type");
+      if (!catsContentType || !catsContentType.includes("application/json")) {
+        throw new Error("Categories didn't return JSON");
+      }
       const categories = await catsRes.json();
 
       // Fetch combined questions for multiple categories
-      const activeIds = serverState.activeCategoryIds || ['default'];
+      const activeIds = serverState.activeCategoryIds && serverState.activeCategoryIds.length > 0 ? serverState.activeCategoryIds : ['default'];
       const questionsRes = await fetch(`${API_BASE}/questions-multi/${activeIds.join(',')}`);
+      if (!questionsRes.ok) throw new Error(`Questions fetch failed: ${questionsRes.status}`);
+      const qContentType = questionsRes.headers.get("content-type");
+      if (!qContentType || !qContentType.includes("application/json")) {
+        throw new Error("Questions didn't return JSON");
+      }
       const questions = await questionsRes.json() || [];
 
       // If we have a timerStartTime in the theme, calculate timeLeft locally
@@ -230,6 +285,10 @@ export const useStore = create<AppState>()((set, get) => ({
           voiceMode: serverState.voiceMode || 'browser',
         };
 
+        if (streamingSettingsToApply.ytLiveState) {
+          nextPartial.ytLiveState = streamingSettingsToApply.ytLiveState;
+        }
+
         if (JSON.stringify(prev.liveCategoryIds) !== JSON.stringify(activeIds)) {
           nextPartial.liveCategoryIds = activeIds;
         }
@@ -263,7 +322,7 @@ export const useStore = create<AppState>()((set, get) => ({
         'logoUrl', 'footerText', 'telegramText', 'bannerText', 'motivationalText',
         'globalTimerDuration', 'quizCompletionMode',
         'speechEnabled', 'humanExpressionsEnabled', 'ttsRate', 'ttsVolume',
-        'narrationLanguage', 'ttsVoiceGender', 'voiceMode', 'theme', 'themeMode'
+        'narrationLanguage', 'ttsVoiceGender', 'voiceMode', 'theme', 'themeMode', 'ytLiveState'
       ];
 
       const streamingSettingsPatch: any = {};
@@ -295,6 +354,12 @@ export const useStore = create<AppState>()((set, get) => ({
     } catch (e) {
       console.error('Failed to push state:', e);
     }
+  },
+
+  pushYTLiveState: async (patch) => {
+    const current = get().ytLiveState;
+    const nextState = { ...current, ...patch };
+    await get().pushState({ ytLiveState: nextState });
   },
 
   setLiveCategoryIds: async (ids) => {
