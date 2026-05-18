@@ -51,7 +51,11 @@ export default function QuizRunAdmin() {
             await fetch('/api/stream/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action })
+                body: JSON.stringify({ 
+                    action,
+                    resolution: envVars.STREAM_RESOLUTION,
+                    fps: envVars.STREAM_FPS
+                })
             });
             setTimeout(fetchValidation, 1000);
         } catch (e) {
@@ -246,6 +250,96 @@ export default function QuizRunAdmin() {
                                         className="w-full py-2 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 font-bold rounded text-[10px] uppercase tracking-widest border border-cyan-800 transition-all disabled:opacity-50"
                                     >
                                         {loading === 'save-env' ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'SAVE SETTINGS'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Performance Settings Card */}
+                            <div className="border border-slate-800 rounded-lg p-5 bg-slate-900/50 shadow-lg relative overflow-hidden flex flex-col h-full border-yellow-900/50 col-span-1 md:col-span-2 lg:col-span-1">
+                                <div className="absolute top-0 left-0 w-1 h-full bg-yellow-600"></div>
+                                <h3 className="text-white font-bold tracking-widest uppercase text-sm mb-4 flex items-center gap-2">
+                                    <Cpu className="w-4 h-4 text-yellow-500" /> Performance Settings
+                                </h3>
+                                
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-slate-500 font-bold mb-1.5 text-[10px] uppercase">RESOLUTION</label>
+                                            <select 
+                                                value={envVars.STREAM_RESOLUTION || '854x480'} 
+                                                onChange={(e) => setEnvVars({...envVars, STREAM_RESOLUTION: e.target.value})}
+                                                className="w-full bg-black/40 border border-slate-800 rounded p-2 text-slate-300 text-xs outline-none"
+                                            >
+                                                <option value="640x360">640x360</option>
+                                                <option value="854x480">854x480 (Default)</option>
+                                                <option value="960x540">960x540</option>
+                                                <option value="1280x720">1280x720</option>
+                                                <option value="1600x900">1600x900</option>
+                                                <option value="1920x1080">1920x1080</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-slate-500 font-bold mb-1.5 text-[10px] uppercase">FPS</label>
+                                            <select 
+                                                value={envVars.STREAM_FPS || '8'} 
+                                                onChange={(e) => setEnvVars({...envVars, STREAM_FPS: e.target.value})}
+                                                className="w-full bg-black/40 border border-slate-800 rounded p-2 text-slate-300 text-xs outline-none"
+                                            >
+                                                <option value="5">5 FPS</option>
+                                                <option value="8">8 FPS (Default)</option>
+                                                <option value="10">10 FPS</option>
+                                                <option value="15">15 FPS</option>
+                                                <option value="24">24 FPS</option>
+                                                <option value="30">30 FPS</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-slate-500 font-bold mb-1.5 text-[10px] uppercase">AUTO PRESETS</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {[
+                                                { name: 'Low End VPS', res: '640x360', fps: '5' },
+                                                { name: 'Balanced', res: '854x480', fps: '8' },
+                                                { name: 'Medium', res: '960x540', fps: '15' },
+                                                { name: 'High Quality', res: '1280x720', fps: '24' },
+                                                { name: 'Ultra', res: '1920x1080', fps: '30' }
+                                            ].map(p => (
+                                                <button 
+                                                    key={p.name}
+                                                    onClick={() => setEnvVars({...envVars, STREAM_RESOLUTION: p.res, STREAM_FPS: p.fps})}
+                                                    className="py-1 px-2 border border-slate-800 hover:border-slate-600 bg-slate-950 rounded text-[9px] text-slate-400 hover:text-white transition-all text-left uppercase"
+                                                >
+                                                    {p.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-950/50 border border-slate-800 rounded space-y-2">
+                                        <div className="flex justify-between text-[9px] font-bold uppercase tracking-tighter">
+                                            <span className="text-slate-500">Est. CPU Usage:</span>
+                                            <span className={envVars.STREAM_RESOLUTION?.includes('1080') ? 'text-red-400' : 'text-cyan-400'}>
+                                                {envVars.STREAM_RESOLUTION?.includes('1080') ? '80-95%' : envVars.STREAM_RESOLUTION?.includes('720') ? '50-70%' : '15-40%'}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-[9px] font-bold uppercase tracking-tighter">
+                                            <span className="text-slate-500">Est. RAM Usage:</span>
+                                            <span className="text-cyan-400">
+                                                {envVars.STREAM_RESOLUTION?.includes('1080') ? '1.8GB' : '0.8-1.2GB'}
+                                            </span>
+                                        </div>
+                                        <div className="pt-1 border-t border-slate-900 text-[8px] text-slate-600 leading-tight">
+                                            Recommend: {envVars.STREAM_RESOLUTION?.includes('1080') ? '4 vCPU / 8GB RAM' : envVars.STREAM_RESOLUTION?.includes('720') ? '2 vCPU / 4GB RAM' : '1 vCPU / 2GB RAM'}
+                                        </div>
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={saveEnv} 
+                                        disabled={loading === 'save-env'}
+                                        className="w-full py-2 bg-yellow-600/10 hover:bg-yellow-600/20 text-yellow-500 font-bold rounded text-[10px] uppercase tracking-widest border border-yellow-900/30 transition-all"
+                                    >
+                                        {loading === 'save-env' ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'SAVE PERFORMANCE'}
                                     </button>
                                 </div>
                             </div>

@@ -44,10 +44,6 @@ router.get('/logs', (req, res) => {
     res.json({ logs: streamLogs });
 });
 
-router.get('/workflow/status', (req, res) => {
-    res.json(workflow.getStatus());
-});
-
 router.get('/tools-check', async (req, res) => {
     const tools = [
         'node', 'npm', 'ffmpeg', 'google-chrome', 'chromium', 
@@ -134,8 +130,20 @@ router.get('/validate', async (req, res) => {
 });
 
 router.post('/action', (req, res) => {
-    const { action } = req.body;
+    const { action, resolution, fps } = req.body;
     let cmd = '';
+
+    const resWidth = (resolution || '854x480').split('x')[0];
+    const resHeight = (resolution || '854x480').split('x')[1];
+    const streamFps = fps || '8';
+    
+    // Heuristic for bitrate based on resolution
+    let bitrate = '800k';
+    if (parseInt(resWidth) <= 640) bitrate = '400k';
+    else if (parseInt(resWidth) <= 854) bitrate = '800k';
+    else if (parseInt(resWidth) <= 960) bitrate = '1200k';
+    else if (parseInt(resWidth) <= 1280) bitrate = '2500k';
+    else bitrate = '4500k';
 
     switch (action) {
         case 'kill-services':
@@ -168,7 +176,7 @@ pactl list short sinks
         case 'start-vnc-stack':
             cmd = `
 tmux kill-session -t quiz-xvfb 2>/dev/null || true
-tmux new-session -d -s quiz-xvfb "Xvfb :99 -screen 0 1280x720x16 & openbox & wait"
+tmux new-session -d -s quiz-xvfb "Xvfb :99 -screen 0 ${resWidth}x${resHeight}x16 & openbox & wait"
 
 tmux kill-session -t quiz-vnc 2>/dev/null || true
 tmux new-session -d -s quiz-vnc "x11vnc -display :99 -forever -nopw -listen 0.0.0.0 -xkb & wait"
@@ -196,7 +204,7 @@ tmux new-session -d -s quiz-browser "export DISPLAY=:99; google-chrome \\
 --disable-backgrounding-occluded-windows \\
 --disable-features=TranslateUI \\
 --autoplay-policy=no-user-gesture-required \\
---window-size=1280,720 \\
+--window-size=${resWidth},${resHeight} \\
 --kiosk \\
 http://127.0.0.1:3000 & wait"
             `.trim();
@@ -218,8 +226,8 @@ fi;
 
 ffmpeg \\
 -f x11grab \\
--video_size 1280x720 \\
--framerate 15 \\
+-video_size ${resWidth}x${resHeight} \\
+-framerate ${streamFps} \\
 -i :99.0 \\
 -f pulse \\
 -i stream.monitor \\
@@ -228,8 +236,9 @@ ffmpeg \\
 -tune zerolatency \\
 -pix_fmt yuv420p \\
 -c:a aac \\
--b:v 1500k \\
+-b:v ${bitrate} \\
 -b:a 128k \\
+-r ${streamFps} \\
 -f flv \\
 "$YOUTUBE_RTMP_URL"
             `.trim();
