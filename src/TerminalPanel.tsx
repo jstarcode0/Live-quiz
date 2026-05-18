@@ -56,6 +56,13 @@ export default function TerminalPanel() {
 
         connectWs();
 
+        const handleTerminalInput = (e: any) => {
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'input', input: e.detail }));
+            }
+        };
+        window.addEventListener('terminal-input', handleTerminalInput);
+
         term.onData((data) => {
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                 wsRef.current.send(JSON.stringify({ type: 'input', input: data }));
@@ -79,6 +86,7 @@ export default function TerminalPanel() {
 
         return () => {
             window.removeEventListener('resize', handleResize);
+            window.removeEventListener('terminal-input', handleTerminalInput);
             if (wsRef.current) {
                 wsRef.current.onclose = null;
                 wsRef.current.close();
