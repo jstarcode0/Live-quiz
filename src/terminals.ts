@@ -1,11 +1,23 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import * as pty from 'node-pty';
 import os from 'os';
+
+let pty: any = null;
+try {
+    pty = require('node-pty');
+} catch (e) {
+    console.warn('node-pty not found. Terminal will be disabled.');
+}
 
 export function setupWebSocketTerminals(server: any) {
     const wss = new WebSocketServer({ server, path: '/api/terminal' });
 
     wss.on('connection', (ws: WebSocket) => {
+        if (!pty) {
+            ws.send('\r\n\x1b[31mTerminal unavailable: node-pty could not be loaded (missing build tools).\x1b[0m\r\n');
+            ws.close();
+            return;
+        }
+
         const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
         
         const ptyProcess = pty.spawn(shell, [], {
@@ -33,7 +45,6 @@ export function setupWebSocketTerminals(server: any) {
                     ptyProcess.write(data.input);
                 }
             } catch (e) {
-                // If not JSON, write raw
                 ptyProcess.write(msg.toString());
             }
         });

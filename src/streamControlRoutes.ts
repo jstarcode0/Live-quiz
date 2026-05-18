@@ -4,10 +4,8 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { WorkflowManager } from './WorkflowManager';
 
 const router = express.Router();
-const workflow = WorkflowManager.getInstance();
 
 export const streamLogs: { timestamp: string, type: string, message: string }[] = [];
 export function addLog(source: string, message: string) {
@@ -136,85 +134,120 @@ router.get('/validate', async (req, res) => {
 });
 
 router.post('/action', (req, res) => {
-    const { action, browser } = req.body;
-    const rtmpUrl = req.body.rtmpUrl || 'rtmp://a.rtmp.youtube.com/live2';
-    const streamKey = req.body.streamKey || 'dummy_key';
+    const { action } = req.body;
     let cmd = '';
 
-    if (action === 'start-full-stream') {
-        const audioMode = req.body.audioMode || 'disabled';
-        workflow.startWorkflow(rtmpUrl, streamKey, browser, audioMode);
-        return res.json({ success: true, message: 'Workflow started' });
-    }
-
-    if (action && action.startsWith('kill-pid-')) {
-        const pid = action.replace('kill-pid-', '');
-        if (/^\d+$/.test(pid)) {
-            exec(`kill -9 ${pid}`, (err) => {
-                if (err) return res.json({ success: false, error: err.message });
-                return res.json({ success: true });
-            });
-            return;
-        }
-    }
-
-    const browserExec = browser === 'chromium' ? 'chromium' : (browser === 'firefox' ? 'firefox' : 'chrome');
-    const bcmd = browser === 'firefox' 
-        ? 'firefox --kiosk http://127.0.0.1:3000'
-        : `${browser === 'chromium' ? 'chromium' : 'google-chrome'} --no-sandbox --disable-gpu --disable-gpu-compositing --disable-accelerated-2d-canvas --disable-software-rasterizer --disable-dev-shm-usage --disable-extensions --disable-background-networking --disable-sync --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-features=TranslateUI --autoplay-policy=no-user-gesture-required --window-size=1280,720 --kiosk http://127.0.0.1:3000`;
-
-    // Improved FFmpeg commands (Full vs Video Only)
-    const ffmpegFull = `ffmpeg -thread_queue_size 4096 -use_wallclock_as_timestamps 1 -fflags nobuffer+genpts -f x11grab -draw_mouse 0 -video_size 1280x720 -framerate 8 -i :99.0 -thread_queue_size 4096 -f pulse -i stream.monitor -af aresample=async=1:min_hard_comp=0.100:first_pts=0 -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -r 8 -g 16 -b:v 450k -maxrate 450k -bufsize 900k -crf 35 -c:a aac -b:a 48k -ar 44100 -threads 1 -f flv "${rtmpUrl}/${streamKey}"`;
-    const ffmpegVideoOnly = `ffmpeg -thread_queue_size 4096 -use_wallclock_as_timestamps 1 -fflags nobuffer+genpts -f x11grab -draw_mouse 0 -video_size 1280x720 -framerate 8 -i :99.0 -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -r 8 -g 16 -b:v 450k -maxrate 450k -bufsize 900k -crf 35 -threads 1 -f flv "${rtmpUrl}/${streamKey}"`;
-
-    const wrapTmux = (session: string, command: string) => {
-        return `if tmux has-session -t ${session} 2>/dev/null; then echo "Session ${session} already exists"; else tmux new-session -d -s ${session} "${command.replace(/"/g, '\\"')}"; fi`;
-    };
-
     switch (action) {
-        case 'start-xvfb':
-            cmd = `rm -f /tmp/.X99-lock && ` + wrapTmux('quiz-xvfb', `Xvfb :99 -screen 0 1280x720x16 -ac`);
-            break;
-        case 'stop-xvfb':
-            cmd = 'tmux kill-session -t quiz-xvfb; pkill Xvfb; rm -f /tmp/.X99-lock';
+        case 'kill-services':
+            cmd = 'pkill chrome; pkill chromium; pkill ffmpeg; pkill Xvfb; pkill openbox; pkill pulseaudio; pkill x11vnc; pkill websockify';
             break;
         case 'start-pulse':
-            cmd = `rm -rf /tmp/runtime-root && mkdir -p /tmp/runtime-root && chmod 700 /tmp/runtime-root && (pulseaudio --start --exit-idle-time=-1 || echo "PulseAudio failed")`;
+            cmd = `
+pkill -9 pulseaudio 2>/dev/null || true
+rm -rf /tmp/pulse-* /tmp/runtime-root
+
+export DISPLAY=:99
+export XDG_RUNTIME_DIR=/tmp/runtime-root
+export PULSE_RUNTIME_PATH=/tmp/runtime-root/pulse
+
+mkdir -p $XDG_RUNTIME_DIR
+chmod 700 $XDG_RUNTIME_DIR
+
+pulseaudio --daemonize=yes --system=false --exit-idle-time=-1
+sleep 3
+
+pactl info
+
+pactl load-module module-null-sink sink_name=stream
+pactl load-module module-null-sink sink_name=stream sink_properties=device.description=stream
+
+pactl list short sinks
+            `.trim();
             break;
-        case 'create-sink':
-            cmd = `pactl load-module module-null-sink sink_name=stream`;
+
+        case 'start-vnc-stack':
+            cmd = `
+tmux kill-session -t quiz-xvfb 2>/dev/null || true
+tmux new-session -d -s quiz-xvfb "Xvfb :99 -screen 0 1280x720x16 & openbox & wait"
+
+tmux kill-session -t quiz-vnc 2>/dev/null || true
+tmux new-session -d -s quiz-vnc "x11vnc -display :99 -forever -nopw -listen 0.0.0.0 -xkb & wait"
+
+tmux kill-session -t quiz-websockify 2>/dev/null || true
+tmux new-session -d -s quiz-websockify "websockify --web=/usr/share/novnc/ 6080 localhost:5900 & wait"
+            `.trim();
             break;
+
         case 'start-browser':
-            cmd = wrapTmux('quiz-browser', bcmd);
+            cmd = `
+tmux kill-session -t quiz-browser 2>/dev/null || true
+tmux new-session -d -s quiz-browser "export DISPLAY=:99; google-chrome \\
+--no-sandbox \\
+--disable-gpu \\
+--disable-gpu-compositing \\
+--disable-accelerated-2d-canvas \\
+--disable-software-rasterizer \\
+--disable-dev-shm-usage \\
+--disable-extensions \\
+--disable-background-networking \\
+--disable-sync \\
+--disable-background-timer-throttling \\
+--disable-renderer-backgrounding \\
+--disable-backgrounding-occluded-windows \\
+--disable-features=TranslateUI \\
+--autoplay-policy=no-user-gesture-required \\
+--window-size=1280,720 \\
+--kiosk \\
+http://127.0.0.1:3000 & wait"
+            `.trim();
             break;
-        case 'stop-browser':
-            cmd = 'tmux kill-session -t quiz-browser; pkill -f chrome; pkill -f chromium; pkill -f firefox';
-            break;
+
         case 'start-ffmpeg':
-            // Heuristic to decide if audio sink exists
-            cmd = `if pactl list short sinks | grep -q stream; then ${wrapTmux('quiz-ffmpeg', ffmpegFull)}; else ${wrapTmux('quiz-ffmpeg', ffmpegVideoOnly)}; fi`;
+            const ffmpegSessionCmd = `
+export DISPLAY=:99;
+export XDG_RUNTIME_DIR=/tmp/runtime-root;
+
+set -a;
+source .env;
+set +a;
+
+if [ -z "$YOUTUBE_RTMP_URL" ]; then
+  echo 'RTMP URL missing in .env';
+  exit 1;
+fi;
+
+ffmpeg \\
+-f x11grab \\
+-video_size 1280x720 \\
+-framerate 15 \\
+-i :99.0 \\
+-f pulse \\
+-i stream.monitor \\
+-c:v libx264 \\
+-preset ultrafast \\
+-tune zerolatency \\
+-pix_fmt yuv420p \\
+-c:a aac \\
+-b:v 1500k \\
+-b:a 128k \\
+-f flv \\
+"$YOUTUBE_RTMP_URL"
+            `.trim();
+            cmd = `tmux kill-session -t quiz-ffmpeg 2>/dev/null || true; tmux new-session -d -s quiz-ffmpeg "${ffmpegSessionCmd.replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
             break;
-        case 'stop-ffmpeg':
+
+        case 'kill-pulse':
+            cmd = 'pkill -9 pulseaudio; rm -rf /tmp/pulse-* /tmp/runtime-root';
+            break;
+        case 'kill-vnc-stack':
+            cmd = 'tmux kill-session -t quiz-xvfb; tmux kill-session -t quiz-vnc; tmux kill-session -t quiz-websockify; pkill Xvfb; pkill openbox; pkill x11vnc; pkill websockify';
+            break;
+        case 'kill-browser':
+            cmd = 'tmux kill-session -t quiz-browser; pkill chrome; pkill chromium; pkill firefox';
+            break;
+        case 'kill-ffmpeg':
             cmd = 'tmux kill-session -t quiz-ffmpeg; pkill ffmpeg';
             break;
-        case 'stop-full-stream':
-             cmd = 'tmux kill-session -t quiz-ffmpeg; tmux kill-session -t quiz-browser; tmux kill-session -t quiz-vnc; tmux kill-session -t quiz-websockify; tmux kill-session -t quiz-xvfb; tmux kill-session -t quiz-openbox; pkill ffmpeg; pkill -f chrome; pkill -f chromium; pkill -f firefox; pkill pulseaudio; pkill Xvfb; pkill openbox; pkill x11vnc; pkill websockify; rm -f /tmp/.X99-lock';
-             break;
-        case 'start-vnc':
-            cmd = wrapTmux('quiz-vnc', 'x11vnc -display :99 -forever -shared -bg -nopw -noxdamage -rfbport 5900');
-            break;
-        case 'stop-vnc':
-            cmd = 'tmux kill-session -t quiz-vnc; pkill x11vnc';
-            break;
-        case 'start-websockify':
-            cmd = wrapTmux('quiz-websockify', 'python3 -m websockify --web /usr/share/novnc 6080 localhost:5900');
-            break;
-        case 'stop-websockify':
-            cmd = 'tmux kill-session -t quiz-websockify; pkill -f websockify';
-            break;
-        case 'cleanup-zombies':
-             cmd = `ps -A -o stat,ppid | awk '/^[Zz]/ {print $2}' | sort -u | xargs -r -I {} sh -c 'if [ "{}" != "1" ]; then kill -SIGCHLD {} 2>/dev/null || kill -9 {} 2>/dev/null; fi'`;
-             break;
     }
 
     if (cmd) {
@@ -224,9 +257,9 @@ router.post('/action', (req, res) => {
             if (stdout) addLog('STDOUT', stdout);
             if (stderr) addLog('STDERR', stderr);
         });
-        res.json({ success: true, message: `Executed: ${cmd}` });
+        res.json({ success: true, message: `Executed action: ${action}` });
     } else {
-        res.json({ success: !!(action === 'start-full-stream'), message: 'Action handled implicitly' });
+        res.status(400).json({ success: false, message: 'Unknown action' });
     }
 });
 

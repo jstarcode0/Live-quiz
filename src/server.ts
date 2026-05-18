@@ -8,7 +8,7 @@ import { createHash } from 'crypto';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import streamControlRoutes from './streamControlRoutes.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname = path.resolve();
 
 const DATA_DIR = path.join(__dirname, 'data');
 const CATEGORIES_DIR = path.join(DATA_DIR, 'categories');
