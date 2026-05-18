@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Tv, Play, Square, Settings, Terminal, Monitor, Cpu, Loader2, Menu, Server, CheckCircle2, AlertTriangle, XCircle, Box, RefreshCw } from 'lucide-react';
+import { Activity, Tv, Play, Square, Settings, Terminal, Monitor, Cpu, Loader2, Menu, Server, CheckCircle2, AlertTriangle, XCircle, Box, RefreshCw, Film } from 'lucide-react';
 import ProcessMonitorPanel from './ProcessMonitorPanel';
 import TerminalPanel from './TerminalPanel';
 import TmuxManagerPanel from './TmuxManagerPanel';
+import LocalVideoStreamPanel from './LocalVideoStreamPanel';
 
 export default function QuizRunAdmin() {
     const [envVars, setEnvVars] = useState<any>({});
     const [loading, setLoading] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'monitor' | 'terminal' | 'tmux'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'localstream' | 'monitor' | 'terminal' | 'tmux'>('dashboard');
     const [validation, setValidation] = useState<Record<string, boolean>>({});
 
     const fetchEnv = async () => {
@@ -138,6 +139,9 @@ export default function QuizRunAdmin() {
                     <div className="flex gap-2 flex-wrap">
                         <button onClick={() => setActiveTab('dashboard')} className={`py-2 px-4 font-bold rounded flex items-center gap-2 transition-colors text-xs uppercase ${activeTab === 'dashboard' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                            <Activity className="w-4 h-4" /> DASHBOARD
+                        </button>
+                        <button onClick={() => setActiveTab('localstream')} className={`py-2 px-4 font-bold rounded flex items-center gap-2 transition-colors text-xs uppercase ${activeTab === 'localstream' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                           <Film className="w-4 h-4" /> LOCAL VIDEO
                         </button>
                         <button onClick={() => setActiveTab('monitor')} className={`py-2 px-4 font-bold rounded flex items-center gap-2 transition-colors text-xs uppercase ${activeTab === 'monitor' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                            <Server className="w-4 h-4" /> PROCESS & LOGS
@@ -347,6 +351,7 @@ export default function QuizRunAdmin() {
                     </div>
                 )}
 
+                {activeTab === 'localstream' && <div className="h-[75vh]"><LocalVideoStreamPanel envVars={envVars} /></div>}
                 {activeTab === 'monitor' && <div className="h-[75vh]"><ProcessMonitorPanel /></div>}
                 {activeTab === 'tmux' && <div className="h-[75vh]"><TmuxManagerPanel /></div>}
                 {activeTab === 'terminal' && <div className="h-[75vh]"><TerminalPanel /></div>}

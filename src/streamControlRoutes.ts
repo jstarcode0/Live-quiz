@@ -14,6 +14,17 @@ export function addLog(source: string, message: string) {
     if (streamLogs.length > 500) streamLogs.shift();
 }
 
+const activeDownloads: Record<string, {
+    process: ChildProcess;
+    url: string;
+    targetPath: string;
+    progress: string;
+    speed: string;
+    eta: string;
+    percent: number;
+    status: 'downloading' | 'finished' | 'error' | 'stopped';
+}> = {};
+
 router.get('/sysinfo', (req, res) => {
     const memTotal = os.totalmem();
     const memFree = os.freemem();
@@ -62,6 +73,221 @@ router.get('/tools-check', async (req, res) => {
 
     await Promise.all(tools.map(checkTool));
     res.json(results);
+});
+
+// Recursive file search for videos
+async function findVideos(dir: string): Promise<any[]> {
+    let results: any[] = [];
+    const videoExts = ['.mp4', '.mkv', '.mov', '.webm', '.avi'];
+    
+    try {
+        const list = await fs.readdir(dir, { withFileTypes: true });
+        for (const file of list) {
+            const res = path.resolve(dir, file.name);
+            if (file.isDirectory()) {
+                results = results.concat(await findVideos(res));
+            } else {
+                const ext = path.extname(file.name).toLowerCase();
+                if (videoExts.includes(ext)) {
+                    let size = 0;
+                    try {
+                        const stats = await fs.stat(res);
+                        size = stats.size;
+                    } catch (e) {}
+                    results.push({
+                        name: file.name,
+                        path: res,
+                        size,
+                        ext
+                    });
+                }
+            }
+        }
+    } catch (e) {}
+    return results;
+}
+
+router.get('/all-videos', async (req, res) => {
+    const rootDir = process.cwd();
+    const downloadDir = '/root/downloads';
+    
+    let videos = await findVideos(rootDir);
+    
+    // Also try to scan /root/downloads if it exists
+    try {
+        await fs.access(downloadDir);
+        const downloadVideos = await findVideos(downloadDir);
+        // Avoid duplicates if /root/downloads is somehow inside rootDir
+        downloadVideos.forEach(dv => {
+            if (!videos.find(v => v.path === dv.path)) {
+                videos.push(dv);
+            }
+        });
+    } catch (e) {}
+
+    res.json(videos);
+});
+
+// File Management APIs
+router.get('/files', async (req, res) => {
+    const dirPath = (req.query.path as string) || process.cwd();
+    try {
+        const fullPath = path.resolve(dirPath);
+        // Security check: ensure the path is within the app or in /root if we allow it
+        // For simplicity and user request "browsing parent directories", we allow full access within permissions
+        
+        const entries = await fs.readdir(fullPath, { withFileTypes: true });
+        const files = await Promise.all(entries.map(async entry => {
+            const entryPath = path.join(fullPath, entry.name);
+            let size = 0;
+            try {
+                const stats = await fs.stat(entryPath);
+                size = stats.size;
+            } catch (e) {}
+
+            return {
+                name: entry.name,
+                path: entryPath,
+                isDir: entry.isDirectory(),
+                size
+            };
+        }));
+
+        res.json({
+            currentPath: fullPath,
+            files: files.sort((a, b) => {
+                if (a.isDir && !b.isDir) return -1;
+                if (!a.isDir && b.isDir) return 1;
+                return a.name.localeCompare(b.name);
+            })
+        });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post('/delete-file', async (req, res) => {
+    const { filePath } = req.body;
+    if (!filePath) return res.status(400).json({ error: 'filePath is required' });
+    try {
+        await fs.unlink(filePath);
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Download API
+router.post('/download', async (req, res) => {
+    const { url, method = 'wget' } = req.body;
+    if (!url) return res.status(400).json({ error: 'url is required' });
+
+    const downloadDir = '/root/downloads';
+    try {
+        await fs.mkdir(downloadDir, { recursive: true });
+    } catch (e) {
+        addLog('DOWNLOAD_ERROR', `Failed to create /root/downloads, falling back to local downloads folder. Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    
+    // Check if /root/downloads is actually writable/created
+    let finalDownloadDir = downloadDir;
+    try {
+        await fs.access(downloadDir);
+    } catch (e) {
+        finalDownloadDir = path.resolve(process.cwd(), 'downloads');
+        await fs.mkdir(finalDownloadDir, { recursive: true });
+    }
+
+    const fileName = url.split('/').pop()?.split('?')[0] || `download-${Date.now()}`;
+    const targetPath = path.join(finalDownloadDir, fileName);
+    const id = Date.now().toString();
+
+    let child: ChildProcess;
+    if (method === 'curl') {
+        child = spawn('curl', ['-L', '-o', targetPath, url]);
+    } else {
+        // wget with progress output
+        child = spawn('wget', ['-O', targetPath, '--progress=dot:giga', url]);
+    }
+
+    activeDownloads[id] = {
+        process: child,
+        url,
+        targetPath,
+        progress: 'Starting...',
+        speed: '-',
+        eta: '-',
+        percent: 0,
+        status: 'downloading'
+    };
+
+    child.stdout.on('data', (data) => {
+        const msg = data.toString();
+        addLog(`DOWNLOAD_${id}`, msg);
+    });
+
+    child.stderr.on('data', (data) => {
+        const msg = data.toString();
+        // wget output progress to stderr usually
+        activeDownloads[id].progress = msg;
+        
+        // Very basic parsing for wget progress
+        const percentMatch = msg.match(/(\d+)%/);
+        if (percentMatch) activeDownloads[id].percent = parseInt(percentMatch[1]);
+        
+        addLog(`DOWNLOAD_${id}_PROGRESS`, msg);
+    });
+
+    child.on('close', (code) => {
+        if (code === 0) {
+            activeDownloads[id].status = 'finished';
+            addLog(`DOWNLOAD_${id}`, `Finished successfully: ${fileName}`);
+        } else {
+            activeDownloads[id].status = 'error';
+            addLog(`DOWNLOAD_${id}`, `Failed with code ${code}`);
+        }
+    });
+
+    res.json({ success: true, id, fileName });
+});
+
+router.get('/download-status', (req, res) => {
+    const status = Object.entries(activeDownloads).map(([id, data]) => ({
+        id,
+        url: data.url,
+        fileName: path.basename(data.targetPath),
+        percent: data.percent,
+        progress: data.progress,
+        status: data.status
+    }));
+    res.json(status);
+});
+
+router.post('/download/stop', (req, res) => {
+    const { id } = req.body;
+    if (activeDownloads[id]) {
+        activeDownloads[id].process.kill();
+        activeDownloads[id].status = 'stopped';
+        res.json({ success: true });
+    } else {
+        res.status(404).json({ error: 'Download not found' });
+    }
+});
+
+router.get('/video-metadata', (req, res) => {
+    const { filePath } = req.query;
+    if (!filePath) return res.status(400).json({ error: 'filePath is required' });
+
+    const cmd = `ffprobe -v error -select_streams v:0 -show_entries stream=width,height,duration -of json "${filePath}"`;
+    exec(cmd, (err, stdout) => {
+        if (err) return res.status(500).json({ error: err.message });
+        try {
+            const data = JSON.parse(stdout);
+            res.json(data.streams[0] || {});
+        } catch (e) {
+            res.status(500).json({ error: 'Failed to parse metadata' });
+        }
+    });
 });
 
 router.post('/install-tool', (req, res) => {
@@ -253,6 +479,48 @@ ffmpeg \\
             break;
         case 'kill-browser':
             cmd = 'tmux kill-session -t quiz-browser; pkill chrome; pkill chromium; pkill firefox';
+            break;
+        case 'start-local-stream':
+            const { videoPath } = req.body;
+            if (!videoPath) {
+                return res.status(400).json({ success: false, message: 'videoPath is required' });
+            }
+
+            // User requested defaults: 854x480, 8 FPS, 700k bitrate
+            const finalResWidth = '854';
+            const finalResHeight = '480';
+            const finalFps = '8';
+            const finalBitrate = '700k';
+
+            const ffmpegLocalCmd = `
+set -a;
+source .env;
+set +a;
+
+if [ -z "$YOUTUBE_RTMP_URL" ]; then
+  echo 'RTMP URL missing in .env';
+  exit 1;
+fi;
+
+ffmpeg \\
+-re \\
+-stream_loop -1 \\
+-i "${videoPath}" \\
+-c:v libx264 \\
+-preset ultrafast \\
+-tune zerolatency \\
+-pix_fmt yuv420p \\
+-c:a aac \\
+-b:v ${finalBitrate} \\
+-r ${finalFps} \\
+-s ${finalResWidth}x${finalResHeight} \\
+-f flv \\
+"$YOUTUBE_RTMP_URL"
+            `.trim();
+            
+            // Kill old FFmpeg session automatically
+            // Then start new one
+            cmd = `tmux kill-session -t quiz-ffmpeg 2>/dev/null || true; tmux new-session -d -s quiz-ffmpeg "${ffmpegLocalCmd.replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
             break;
         case 'kill-ffmpeg':
             cmd = 'tmux kill-session -t quiz-ffmpeg; pkill ffmpeg';
