@@ -18,12 +18,20 @@ class TelegramService {
     }
 
     private loadConfig() {
-        const rows = db.prepare('SELECT * FROM settings WHERE key IN ("telegram_api_id", "telegram_api_hash", "telegram_session")').all() as any[];
-        rows.forEach(row => {
-            if (row.key === 'telegram_api_id') this.config.apiId = row.value;
-            if (row.key === 'telegram_api_hash') this.config.apiHash = row.value;
-            if (row.key === 'telegram_session') this.config.session = row.value;
-        });
+        try {
+            const keys = ['telegram_api_id', 'telegram_api_hash', 'telegram_session'];
+            const placeholders = keys.map(() => '?').join(',');
+            const rows = db.prepare(`SELECT * FROM settings WHERE key IN (${placeholders})`).all(...keys) as any[];
+            
+            rows.forEach(row => {
+                if (row.key === 'telegram_api_id') this.config.apiId = row.value;
+                if (row.key === 'telegram_api_hash') this.config.apiHash = row.value;
+                if (row.key === 'telegram_session') this.config.session = row.value;
+            });
+            console.log("Telegram config loaded from DB");
+        } catch (e) {
+            console.error("Error loading telegram config:", e);
+        }
     }
 
     async updateConfig(key: string, value: string) {

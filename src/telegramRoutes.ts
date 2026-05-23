@@ -165,7 +165,7 @@ router.post('/disconnect', async (req, res) => {
 
 router.get('/trending', (req, res) => {
     // Basic trending: just recent 10 videos
-    const media = db.prepare('SELECT m.*, c.title as channel_name FROM media m JOIN channels c ON m.channel_id = c.id WHERE m.category = "video" ORDER BY m.message_date DESC LIMIT 10').all();
+    const media = db.prepare('SELECT m.*, c.title as channel_name FROM media m JOIN channels c ON m.channel_id = c.id WHERE m.category = \'video\' ORDER BY m.message_date DESC LIMIT 10').all();
     res.json(media);
 });
 
