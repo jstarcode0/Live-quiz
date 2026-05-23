@@ -20,7 +20,8 @@ import {
   Volume2,
   VolumeX,
   Copy,
-  Check
+  Check,
+  Archive
 } from 'lucide-react';
 import { useStore } from './store';
 
@@ -851,6 +852,20 @@ export default function QuizView({ isPreview = false }: { isPreview?: boolean })
             </div>
         </div>
       )}
+
+      {/* Telegram Library Floating Link */}
+      <motion.a 
+        href="/telegram"
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="absolute bottom-10 right-10 z-[100] bg-blue-600/20 hover:bg-blue-600 border border-blue-500/30 text-white px-5 py-3 rounded-2xl flex items-center gap-3 backdrop-blur-xl transition-all group shadow-2xl"
+      >
+        <Archive size={20} className="group-hover:scale-110 transition-transform" />
+        <div className="text-left">
+           <div className="text-[10px] font-black uppercase tracking-widest text-blue-400 group-hover:text-white leading-none">Media Cloud</div>
+           <div className="text-xs font-bold uppercase tracking-tight leading-none mt-1">Telegram Library</div>
+        </div>
+      </motion.a>
 
       {/* TEMPLATE RENDERER */}
       {(() => {

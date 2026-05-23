@@ -4,7 +4,7 @@ import {
   Settings, List, PlayCircle, LogOut, CheckCircle, Save, Plus, Trash2, 
   Edit2, Volume2, ArrowUp, ArrowDown, Copy as IconCopy, Database, 
   Folder, Upload, Download, FileJson, AlertCircle, RefreshCcw, Search,
-  Tv, Info, XCircle, CheckCircle2, SkipForward, ArrowRight, Radio, Users, VolumeX
+  Tv, Info, XCircle, CheckCircle2, SkipForward, ArrowRight, Radio, Users, VolumeX, Archive
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import QuizView from '../QuizView';
@@ -109,10 +109,17 @@ export default function AdminPanel() {
             { id: 'questions', label: 'Bank', icon: List },
             { id: 'import', label: 'Import', icon: FileJson },
             { id: 'settings', label: 'Settings', icon: Settings },
+            { id: 'telegram', label: 'Telegram', icon: Archive },
           ].map(tab => (
             <button 
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => {
+                if (tab.id === 'telegram') {
+                  window.location.href = '/telegram/admin';
+                  return;
+                }
+                setActiveTab(tab.id as any);
+              }}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-2 ${activeTab === tab.id ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-900/20' : 'text-slate-400 hover:text-white'}`}
             >
               <tab.icon size={14} />

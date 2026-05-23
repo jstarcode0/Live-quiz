@@ -12,7 +12,7 @@ export default function LocalVideoStreamPanel({ envVars }: { envVars: any }) {
     const [metadata, setMetadata] = useState<Record<string, any>>({});
     const [streamStatus, setStreamStatus] = useState<Record<string, boolean>>({});
     const [ffmpegOutput, setFfmpegOutput] = useState<string>('');
-    const [activeVideoName, setActiveVideoName] = useState<string>(localStorage.getItem('activeStreamVideo') || 'None');
+    const [activeVideoName, setActiveVideoName] = useState<string>('None');
 
     const fetchMetadata = async (filePath: string) => {
         if (metadata[filePath]) return;
@@ -48,7 +48,11 @@ export default function LocalVideoStreamPanel({ envVars }: { envVars: any }) {
     const fetchStreamStatus = async () => {
         try {
             const res = await fetch('/api/stream/validate');
-            setStreamStatus(await res.json());
+            const data = await res.json();
+            setStreamStatus(data);
+            if (data.activeVideoName) {
+                setActiveVideoName(data.activeVideoName);
+            }
         } catch (e) {}
     };
 
@@ -154,7 +158,6 @@ export default function LocalVideoStreamPanel({ envVars }: { envVars: any }) {
                 })
             });
             setActiveVideoName(videoName);
-            localStorage.setItem('activeStreamVideo', videoName);
             setTimeout(fetchStreamStatus, 1500);
         } catch (e) {}
         setLoading(null);
@@ -168,7 +171,6 @@ export default function LocalVideoStreamPanel({ envVars }: { envVars: any }) {
                 body: JSON.stringify({ action: 'kill-ffmpeg' })
             });
             setActiveVideoName('None');
-            localStorage.removeItem('activeStreamVideo');
             setStreamStatus(prev => ({ ...prev, FFmpeg: false }));
         } catch (e) {}
     };

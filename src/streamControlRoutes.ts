@@ -85,6 +85,7 @@ async function findVideos(dir: string): Promise<any[]> {
         for (const file of list) {
             const res = path.resolve(dir, file.name);
             if (file.isDirectory()) {
+                if (file.name === 'node_modules' || file.name === '.git' || file.name === 'dist') continue;
                 results = results.concat(await findVideos(res));
             } else {
                 const ext = path.extname(file.name).toLowerCase();
@@ -331,6 +332,8 @@ router.post('/install-tool', (req, res) => {
     res.json({ success: true, message: `Installation started for ${tool}`, command: installCmd });
 });
 
+let activeStreamVideoName = 'None';
+
 router.get('/validate', async (req, res) => {
     const checks = [
         { name: 'Xvfb', cmd: 'pgrep Xvfb' },
@@ -343,7 +346,7 @@ router.get('/validate', async (req, res) => {
         { name: 'noVNC', cmd: 'pgrep -f websockify' }
     ];
 
-    const results: Record<string, boolean> = {};
+    const results: any = {};
     for (const check of checks) {
         await new Promise((resolve) => {
             exec(check.cmd, (err) => {
@@ -352,6 +355,12 @@ router.get('/validate', async (req, res) => {
             });
         });
     }
+
+    if (!results.FFmpeg) {
+        activeStreamVideoName = 'None';
+    }
+
+    results.activeVideoName = activeStreamVideoName;
     res.json(results);
 });
 
@@ -437,6 +446,7 @@ http://127.0.0.1:3000 & wait"
             break;
 
         case 'start-ffmpeg':
+            activeStreamVideoName = 'Browser Capture';
             const ffmpegSessionCmd = `
 export DISPLAY=:99;
 export XDG_RUNTIME_DIR=/tmp/runtime-root;
@@ -481,18 +491,26 @@ ffmpeg \\
             cmd = 'tmux kill-session -t quiz-browser; pkill chrome; pkill chromium; pkill firefox';
             break;
         case 'start-local-stream':
-            const { videoPath } = req.body;
-            if (!videoPath) {
+            const { videoPath: localVideoPath } = req.body;
+            if (!localVideoPath) {
                 return res.status(400).json({ success: false, message: 'videoPath is required' });
             }
+            activeStreamVideoName = path.basename(localVideoPath);
 
-            // User requested defaults: 854x480, 8 FPS, 700k bitrate
-            const finalResWidth = '854';
-            const finalResHeight = '480';
-            const finalFps = '8';
-            const finalBitrate = '700k';
+            // Kill EVERYTHING first to ensure NO browser capture is running
+            const cleanupCmd = `
+pkill -9 chrome 2>/dev/null || true; 
+pkill -9 chromium 2>/dev/null || true; 
+pkill -9 Xvfb 2>/dev/null || true; 
+pkill -9 ffmpeg 2>/dev/null || true; 
+tmux kill-session -t quiz-ffmpeg 2>/dev/null || true;
+tmux kill-session -t quiz-xvfb 2>/dev/null || true;
+tmux kill-session -t quiz-browser 2>/dev/null || true;
+tmux kill-session -t quiz-vnc 2>/dev/null || true;
+tmux kill-session -t quiz-websockify 2>/dev/null || true;
+`.trim().replace(/\n/g, ' ');
 
-            const ffmpegLocalCmd = `
+            const ffmpegCommand = `
 set -a;
 source .env;
 set +a;
@@ -502,27 +520,29 @@ if [ -z "$YOUTUBE_RTMP_URL" ]; then
   exit 1;
 fi;
 
+VIDEO_PATH="${localVideoPath}"
+
 ffmpeg \\
 -re \\
 -stream_loop -1 \\
--i "${videoPath}" \\
+-i "$VIDEO_PATH" \\
 -c:v libx264 \\
 -preset ultrafast \\
 -tune zerolatency \\
 -pix_fmt yuv420p \\
 -c:a aac \\
--b:v ${finalBitrate} \\
--r ${finalFps} \\
--s ${finalResWidth}x${finalResHeight} \\
+-b:v 700k \\
+-r 8 \\
+-s 854x480 \\
 -f flv \\
 "$YOUTUBE_RTMP_URL"
             `.trim();
-            
-            // Kill old FFmpeg session automatically
-            // Then start new one
-            cmd = `tmux kill-session -t quiz-ffmpeg 2>/dev/null || true; tmux new-session -d -s quiz-ffmpeg "${ffmpegLocalCmd.replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
+
+            const tmuxFullCmd = `tmux new-session -d -s quiz-ffmpeg "${ffmpegCommand.replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
+            cmd = `${cleanupCmd} ${tmuxFullCmd}`;
             break;
         case 'kill-ffmpeg':
+            activeStreamVideoName = 'None';
             cmd = 'tmux kill-session -t quiz-ffmpeg; pkill ffmpeg';
             break;
     }

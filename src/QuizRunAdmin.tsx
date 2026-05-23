@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Tv, Play, Square, Settings, Terminal, Monitor, Cpu, Loader2, Menu, Server, CheckCircle2, AlertTriangle, XCircle, Box, RefreshCw, Film } from 'lucide-react';
+import { Activity, Tv, Play, Square, Settings, Terminal, Monitor, Cpu, Loader2, Menu, Server, CheckCircle2, AlertTriangle, XCircle, Box, RefreshCw, Film, Archive } from 'lucide-react';
 import ProcessMonitorPanel from './ProcessMonitorPanel';
 import TerminalPanel from './TerminalPanel';
 import TmuxManagerPanel from './TmuxManagerPanel';
@@ -152,6 +152,9 @@ export default function QuizRunAdmin() {
                         <button onClick={() => setActiveTab('terminal')} className={`py-2 px-4 font-bold rounded flex items-center gap-2 transition-colors text-xs uppercase ${activeTab === 'terminal' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                            <Terminal className="w-4 h-4" /> TERMINAL
                         </button>
+                        <a href="/telegram" className="py-2 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded flex items-center gap-2 transition-colors text-xs uppercase shadow-lg shadow-blue-900/20">
+                           <Archive className="w-4 h-4" /> TELEGRAM LIBRARY
+                        </a>
                     </div>
                 </div>
 

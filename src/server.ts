@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import streamControlRoutes from './streamControlRoutes.js';
+import telegramRoutes from './telegramRoutes.js';
 
 const __dirname = path.resolve();
 
@@ -329,6 +330,7 @@ async function startServer() {
 
   // Mount Stream Control routes
   app.use('/api/stream', streamControlRoutes);
+  app.use('/api/telegram', telegramRoutes);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {

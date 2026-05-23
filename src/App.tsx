@@ -4,6 +4,8 @@ import AdminPanel from './templates/Admin';
 import QuizRunAdmin from './QuizRunAdmin';
 import YTNotesAdmin from './YTNotesAdmin';
 import YTNotesView from './YTNotesView';
+import TelegramMediaLibrary from './components/telegram/TelegramMediaLibrary';
+import TelegramAdminPanel from './components/telegram/TelegramAdminPanel';
 import { useEffect } from 'react';
 import { useStore } from './store';
 
@@ -30,6 +32,8 @@ export default function App() {
         <Route path="/quiz-run/admin" element={<QuizRunAdmin />} />
         <Route path="/yt-notes" element={<YTNotesView />} />
         <Route path="/yt-notes/admin" element={<YTNotesAdmin />} />
+        <Route path="/telegram" element={<TelegramMediaLibrary />} />
+        <Route path="/telegram/admin" element={<TelegramAdminPanel />} />
       </Routes>
     </Router>
   );
