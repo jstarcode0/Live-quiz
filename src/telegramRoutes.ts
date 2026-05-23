@@ -154,6 +154,16 @@ router.post('/login/verify', async (req, res) => {
     }
 });
 
+router.post('/credentials/save', async (req, res) => {
+    const { apiId, apiHash, session } = req.body;
+    try {
+        await telegramService.saveCredentials(apiId, apiHash, session);
+        res.json({ success: true, message: 'Credentials saved and connected' });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.post('/disconnect', async (req, res) => {
     try {
         await telegramService.disconnect();

@@ -15,7 +15,8 @@ export default function TelegramAdminPanel() {
     const [phoneNumber, setPhoneNumber] = useState('');
     const [otp, setOtp] = useState('');
     const [password, setPassword] = useState('');
-    const [loginStep, setLoginStep] = useState<'creds' | 'otp'>('creds');
+    const [loginStep, setLoginStep] = useState<'creds' | 'otp' | 'manual'>('creds');
+    const [sessionString, setSessionString] = useState('');
     const [phoneCodeHash, setPhoneCodeHash] = useState('');
     const [loginLoading, setLoginLoading] = useState(false);
 
@@ -117,6 +118,30 @@ export default function TelegramAdminPanel() {
         }
     };
 
+    const handleManualSave = async () => {
+        setLoginLoading(true);
+        try {
+            const res = await fetch('/api/telegram/credentials/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ apiId, apiHash, session: sessionString })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('Session restored and connected!');
+                setLoginStep('creds');
+                setSessionString('');
+                fetchStatus();
+            } else {
+                alert(data.error || 'Failed to save credentials');
+            }
+        } catch (e) {
+            alert('Error updating credentials');
+        } finally {
+            setLoginLoading(false);
+        }
+    };
+
     const handleDisconnect = async () => {
         if (!confirm('Disconnect Telegram session?')) return;
         try {
@@ -145,12 +170,12 @@ export default function TelegramAdminPanel() {
                         {status && (
                             <div className={`px-4 py-2 rounded-full flex items-center gap-2 border transition-all duration-500 bg-opacity-10 ${
                                 status.status === 'Connected' ? 'bg-green-500 border-green-500/20 text-green-500' : 
-                                status.status === 'Reconnecting' ? 'bg-amber-500 border-amber-500/20 text-amber-500' :
+                                status.status === 'Reconnecting' || status.status === 'DC Timeout' ? 'bg-amber-500 border-amber-500/20 text-amber-500' :
                                 status.status === 'DC Migration' ? 'bg-blue-500 border-blue-500/20 text-blue-500' :
                                 'bg-red-500 border-red-500/20 text-red-500'
                             }`}>
                                 {status.status === 'Connected' ? <Wifi className="w-4 h-4" /> : 
-                                 status.status === 'Reconnecting' ? <RefreshCw className="w-4 h-4 animate-spin" /> :
+                                 status.status === 'Reconnecting' || status.status === 'DC Timeout' ? <RefreshCw className="w-4 h-4 animate-spin" /> :
                                  status.status === 'DC Migration' ? <Activity className="w-4 h-4 animate-pulse" /> :
                                  <WifiOff className="w-4 h-4" />}
                                 <span className="text-[10px] font-black uppercase tracking-widest">{status.status}</span>
@@ -180,7 +205,7 @@ export default function TelegramAdminPanel() {
                                 <h2 className="text-sm font-black uppercase tracking-widest italic">MTProto Connection Manager</h2>
                             </div>
 
-                            {status?.status === 'Connected' ? (
+                             {status?.status === 'Connected' ? (
                                 <div className="space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
@@ -203,13 +228,22 @@ export default function TelegramAdminPanel() {
                                             </div>
                                         </div>
                                     </div>
-                                    <button 
-                                        onClick={handleDisconnect}
-                                        className="w-full py-4 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border border-red-500/20 flex items-center justify-center gap-2"
-                                    >
-                                        <LogOut className="w-4 h-4" />
-                                        Terminate & Destroy Session
-                                    </button>
+                                    <div className="flex gap-4">
+                                        <button 
+                                            onClick={() => { fetchStatus(); }}
+                                            className="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 text-slate-300 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/5 flex items-center justify-center gap-2"
+                                        >
+                                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                                            Refresh Connection
+                                        </button>
+                                        <button 
+                                            onClick={handleDisconnect}
+                                            className="flex-1 py-4 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border border-red-500/20 flex items-center justify-center gap-2"
+                                        >
+                                            <LogOut className="w-4 h-4" />
+                                            Terminate Session
+                                        </button>
+                                    </div>
                                 </div>
                             ) : (
                                 <AnimatePresence mode="wait">
@@ -250,7 +284,7 @@ export default function TelegramAdminPanel() {
                                                 </div>
                                             </div>
                                             <div className="space-y-1.5">
-                                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-4">Telegram Phone Number (with country code)</label>
+                                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-4">Telegram Phone Number (required for OTP)</label>
                                                 <div className="relative">
                                                     <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
                                                     <input 
@@ -262,14 +296,79 @@ export default function TelegramAdminPanel() {
                                                     />
                                                 </div>
                                             </div>
-                                            <button 
-                                                onClick={handleSendOtp}
-                                                disabled={loginLoading || !apiId || !apiHash || !phoneNumber}
-                                                className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-600/20 transition-all active:scale-95 flex items-center justify-center gap-2"
-                                            >
-                                                {loginLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
-                                                Initialize MTProto & Send OTP
-                                            </button>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <button 
+                                                    onClick={handleSendOtp}
+                                                    disabled={loginLoading || !apiId || !apiHash || !phoneNumber}
+                                                    className="py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-600/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                                                >
+                                                    {loginLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
+                                                    Send Login OTP
+                                                </button>
+                                                <button 
+                                                    onClick={() => setLoginStep('manual')}
+                                                    className="py-4 bg-zinc-800 hover:bg-zinc-700 text-slate-300 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/10 flex items-center justify-center gap-2"
+                                                >
+                                                    <ShieldCheck className="w-4 h-4" />
+                                                    Manual Session
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    ) : loginStep === 'manual' ? (
+                                        <motion.div 
+                                            key="manual"
+                                            initial={{ opacity: 0, x: 20 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            exit={{ opacity: 0, x: -20 }}
+                                            className="space-y-4"
+                                        >
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-4">Telegram API ID</label>
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="e.g. 1234567"
+                                                        value={apiId}
+                                                        onChange={(e) => setApiId(e.target.value)}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 px-6 text-xs font-mono focus:border-blue-500/50 transition-all outline-none"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-4">Telegram API Hash</label>
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="API HASH STRING"
+                                                        value={apiHash}
+                                                        onChange={(e) => setApiHash(e.target.value)}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 px-6 text-xs font-mono focus:border-blue-500/50 transition-all outline-none"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-4">Telegram Session String (DC Restorable)</label>
+                                                <textarea 
+                                                    placeholder="Paste your base64 session string here..."
+                                                    value={sessionString}
+                                                    onChange={(e) => setSessionString(e.target.value)}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-6 text-xs font-mono focus:border-blue-500/50 transition-all outline-none min-h-[100px] resize-none"
+                                                />
+                                            </div>
+                                            <div className="flex gap-4">
+                                                <button 
+                                                    onClick={() => setLoginStep('creds')}
+                                                    className="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+                                                >
+                                                    Back
+                                                </button>
+                                                <button 
+                                                    onClick={handleManualSave}
+                                                    disabled={loginLoading || !apiId || !apiHash || !sessionString}
+                                                    className="flex-[2] py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-600/20 transition-all flex items-center justify-center gap-2"
+                                                >
+                                                    {loginLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                                    Save & Connect Instantly
+                                                </button>
+                                            </div>
                                         </motion.div>
                                     ) : (
                                         <motion.div 

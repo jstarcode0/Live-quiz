@@ -7,6 +7,7 @@ import path from "path";
 
 class TelegramService {
     private client: TelegramClient | null = null;
+    private initPromise: Promise<TelegramClient> | null = null;
     private config: any = {
         apiId: process.env.TELEGRAM_API_ID || "",
         apiHash: process.env.TELEGRAM_API_HASH || "",
@@ -28,7 +29,6 @@ class TelegramService {
                 if (row.key === 'telegram_api_hash') this.config.apiHash = row.value;
                 if (row.key === 'telegram_session') this.config.session = row.value;
             });
-            console.log("Telegram config loaded from DB");
         } catch (e) {
             console.error("Error loading telegram config:", e);
         }
@@ -38,22 +38,44 @@ class TelegramService {
         db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
         this.loadConfig();
         if (this.client) {
-            await this.client.disconnect();
+            try {
+                await this.client.disconnect();
+            } catch (e) {}
             this.client = null;
         }
     }
 
-    async getStatus() {
-        if (!this.client) {
+    async saveCredentials(apiId: string, apiHash: string, session: string) {
+        db.transaction(() => {
+            db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('telegram_api_id', apiId);
+            db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('telegram_api_hash', apiHash);
+            db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('telegram_session', session);
+        })();
+        this.loadConfig();
+        if (this.client) {
             try {
-                const keys = ['telegram_api_id', 'telegram_api_hash', 'telegram_session'];
-                const placeholders = keys.map(() => '?').join(',');
-                const rows = db.prepare(`SELECT * FROM settings WHERE key IN (${placeholders})`).all(...keys) as any[];
-                const hasCreds = rows.some(r => r.key === 'telegram_api_id' && r.value) && rows.some(r => r.key === 'telegram_api_hash' && r.value);
+                await this.client.disconnect();
+            } catch (e) {}
+            this.client = null;
+        }
+        return await this.getClient();
+    }
+
+    async getStatus() {
+        if (!this.client || !this.client.connected) {
+            try {
+                const keys = ['telegram_api_id', 'telegram_api_hash'];
+                const rows = db.prepare(`SELECT * FROM settings WHERE key IN (?, ?)`).all(...keys) as any[];
+                const hasCreds = rows.length >= 2 && rows.every(r => r.value);
                 
                 if (!hasCreds) return { status: 'Missing Credentials' };
                 
-                await this.getClient();
+                // Only try to connect if we have a session or if this is the first check after setting creds
+                if (this.config.session) {
+                   await this.getClient();
+                } else {
+                   return { status: 'Disconnected' };
+                }
             } catch (e) {
                 return { status: 'Error', error: (e as Error).message };
             }
@@ -79,8 +101,11 @@ class TelegramService {
                 }
                 return { status: 'Connected' };
             } catch (e: any) {
-                if (e.message.includes('migrate')) {
+                if (e.message.toLowerCase().includes('migrate')) {
                     return { status: 'DC Migration' };
+                }
+                if (e.message.toLowerCase().includes('timeout')) {
+                   return { status: 'DC Timeout', error: 'Handshaking with Data Center...' };
                 }
                 return { status: 'Invalid Session', error: (e as Error).message };
             }
@@ -88,29 +113,52 @@ class TelegramService {
         return { status: 'Disconnected' };
     }
 
-    async getClient() {
+    async getClient(): Promise<TelegramClient> {
         if (this.client && this.client.connected) {
             return this.client;
         }
 
-        if (!this.config.apiId || !this.config.apiHash) {
-            throw new Error("TELEGRAM_API_ID and TELEGRAM_API_HASH are required");
+        if (this.initPromise) {
+            return this.initPromise;
         }
 
-        const session = new StringSession(this.config.session || "");
-        this.client = new TelegramClient(session, parseInt(this.config.apiId), this.config.apiHash, {
-            connectionRetries: 10,
-            autoReconnect: true,
-            retryDelay: 5000,
-            floodSleepThreshold: 60,
-            deviceModel: "AI Studio Server",
-            systemVersion: "Debian 12",
-            appVersion: "1.0.0"
-        });
+        this.initPromise = (async () => {
+            try {
+                if (!this.config.apiId || !this.config.apiHash) {
+                    throw new Error("TELEGRAM_API_ID and TELEGRAM_API_HASH are required");
+                }
 
-        console.log("Connecting to Telegram MTProto...");
-        await this.client.connect();
-        return this.client;
+                const session = new StringSession(this.config.session || "");
+                const client = new TelegramClient(session, parseInt(this.config.apiId), this.config.apiHash, {
+                    connectionRetries: 15,
+                    autoReconnect: true,
+                    retryDelay: 5000,
+                    floodSleepThreshold: 60,
+                    deviceModel: "AI Studio Server",
+                    systemVersion: "Debian 12",
+                    appVersion: "1.0.0",
+                    useWSS: false
+                });
+
+                console.log("Connecting to Telegram MTProto... (DC Migration safe mode)");
+                await client.connect();
+                
+                // Save updated session if it changed (e.g. after migration)
+                const newSession = client.session.save() as unknown as string;
+                if (newSession !== this.config.session) {
+                    console.log("Saving migrated session string...");
+                    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('telegram_session', newSession);
+                    this.config.session = newSession;
+                }
+
+                this.client = client;
+                return client;
+            } finally {
+                this.initPromise = null;
+            }
+        })();
+
+        return this.initPromise;
     }
 
     async syncChannel(channelUsername: string) {
