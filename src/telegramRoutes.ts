@@ -122,6 +122,47 @@ router.get('/stats', (req, res) => {
     res.json(stats);
 });
 
+router.get('/status', async (req, res) => {
+    try {
+        const status = await telegramService.getStatus();
+        res.json(status);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/login/send-code', async (req, res) => {
+    const { phoneNumber, apiId, apiHash } = req.body;
+    try {
+        if (apiId) await telegramService.updateConfig('telegram_api_id', apiId);
+        if (apiHash) await telegramService.updateConfig('telegram_api_hash', apiHash);
+        
+        const result = await telegramService.startLogin(phoneNumber);
+        res.json(result);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/login/verify', async (req, res) => {
+    const { phoneNumber, phoneCodeHash, code, password } = req.body;
+    try {
+        const result = await telegramService.completeLogin(phoneNumber, phoneCodeHash, code, password);
+        res.json(result);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/disconnect', async (req, res) => {
+    try {
+        await telegramService.disconnect();
+        res.json({ success: true });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.get('/trending', (req, res) => {
     // Basic trending: just recent 10 videos
     const media = db.prepare('SELECT m.*, c.title as channel_name FROM media m JOIN channels c ON m.channel_id = c.id WHERE m.category = "video" ORDER BY m.message_date DESC LIMIT 10').all();

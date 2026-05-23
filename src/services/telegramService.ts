@@ -5,23 +5,77 @@ import db from "../lib/db.js";
 import fs from "fs";
 import path from "path";
 
-const apiId = parseInt(process.env.TELEGRAM_API_ID || "0");
-const apiHash = process.env.TELEGRAM_API_HASH || "";
-const stringSession = new StringSession(process.env.TELEGRAM_SESSION || "");
-
 class TelegramService {
     private client: TelegramClient | null = null;
+    private config: any = {
+        apiId: process.env.TELEGRAM_API_ID || "",
+        apiHash: process.env.TELEGRAM_API_HASH || "",
+        session: process.env.TELEGRAM_SESSION || ""
+    };
+
+    constructor() {
+        this.loadConfig();
+    }
+
+    private loadConfig() {
+        const rows = db.prepare('SELECT * FROM settings WHERE key IN ("telegram_api_id", "telegram_api_hash", "telegram_session")').all() as any[];
+        rows.forEach(row => {
+            if (row.key === 'telegram_api_id') this.config.apiId = row.value;
+            if (row.key === 'telegram_api_hash') this.config.apiHash = row.value;
+            if (row.key === 'telegram_session') this.config.session = row.value;
+        });
+    }
+
+    async updateConfig(key: string, value: string) {
+        db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+        this.loadConfig();
+        if (this.client) {
+            await this.client.disconnect();
+            this.client = null;
+        }
+    }
+
+    async getStatus() {
+        if (!this.client) {
+            try {
+                await this.getClient();
+            } catch (e) {
+                return { status: 'Disconnected', error: (e as Error).message };
+            }
+        }
+        
+        if (this.client && this.client.connected) {
+            try {
+                const me = await this.client.getMe();
+                if (me instanceof Api.User) {
+                    return {
+                        status: 'Connected',
+                        username: me.username,
+                        firstName: me.firstName,
+                        phone: me.phone,
+                        id: me.id.toString(),
+                        isBot: me.bot
+                    };
+                }
+                return { status: 'Connected' };
+            } catch (e) {
+                return { status: 'Invalid Session', error: (e as Error).message };
+            }
+        }
+        return { status: 'Disconnected' };
+    }
 
     async getClient() {
         if (this.client && this.client.connected) {
             return this.client;
         }
 
-        if (!apiId || !apiHash) {
+        if (!this.config.apiId || !this.config.apiHash) {
             throw new Error("TELEGRAM_API_ID and TELEGRAM_API_HASH are required");
         }
 
-        this.client = new TelegramClient(stringSession, apiId, apiHash, {
+        const session = new StringSession(this.config.session || "");
+        this.client = new TelegramClient(session, parseInt(this.config.apiId), this.config.apiHash, {
             connectionRetries: 5,
         });
 
@@ -127,8 +181,8 @@ class TelegramService {
     async startLogin(phoneNumber: string) {
         const client = await this.getClient();
         return await client.sendCode({
-            apiId,
-            apiHash
+            apiId: parseInt(this.config.apiId),
+            apiHash: this.config.apiHash
         }, phoneNumber);
     }
 
@@ -143,7 +197,16 @@ class TelegramService {
         });
         
         const session = client.session.save() as unknown as string;
+        await this.updateConfig('telegram_session', session);
         return { session };
+    }
+
+    async disconnect() {
+        if (this.client) {
+            await this.client.disconnect();
+            this.client = null;
+        }
+        await this.updateConfig('telegram_session', "");
     }
 }
 

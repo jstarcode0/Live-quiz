@@ -46,6 +46,12 @@ db.exec(`
     UNIQUE(media_id, user_id)
   );
 
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS idx_media_channel ON media(channel_id);
   CREATE INDEX IF NOT EXISTS idx_media_category ON media(category);
   CREATE INDEX IF NOT EXISTS idx_media_file_name ON media(file_name);
