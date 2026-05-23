@@ -143,10 +143,16 @@ export default function TelegramAdminPanel() {
                     
                     <div className="flex items-center gap-4">
                         {status && (
-                            <div className={`px-4 py-2 rounded-full flex items-center gap-2 border ${
-                                status.status === 'Connected' ? 'bg-green-500/10 border-green-500/20 text-green-500' : 'bg-red-500/10 border-red-500/20 text-red-500'
+                            <div className={`px-4 py-2 rounded-full flex items-center gap-2 border transition-all duration-500 bg-opacity-10 ${
+                                status.status === 'Connected' ? 'bg-green-500 border-green-500/20 text-green-500' : 
+                                status.status === 'Reconnecting' ? 'bg-amber-500 border-amber-500/20 text-amber-500' :
+                                status.status === 'DC Migration' ? 'bg-blue-500 border-blue-500/20 text-blue-500' :
+                                'bg-red-500 border-red-500/20 text-red-500'
                             }`}>
-                                {status.status === 'Connected' ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+                                {status.status === 'Connected' ? <Wifi className="w-4 h-4" /> : 
+                                 status.status === 'Reconnecting' ? <RefreshCw className="w-4 h-4 animate-spin" /> :
+                                 status.status === 'DC Migration' ? <Activity className="w-4 h-4 animate-pulse" /> :
+                                 <WifiOff className="w-4 h-4" />}
                                 <span className="text-[10px] font-black uppercase tracking-widest">{status.status}</span>
                             </div>
                         )}

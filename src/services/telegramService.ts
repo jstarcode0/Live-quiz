@@ -46,13 +46,24 @@ class TelegramService {
     async getStatus() {
         if (!this.client) {
             try {
+                const keys = ['telegram_api_id', 'telegram_api_hash', 'telegram_session'];
+                const placeholders = keys.map(() => '?').join(',');
+                const rows = db.prepare(`SELECT * FROM settings WHERE key IN (${placeholders})`).all(...keys) as any[];
+                const hasCreds = rows.some(r => r.key === 'telegram_api_id' && r.value) && rows.some(r => r.key === 'telegram_api_hash' && r.value);
+                
+                if (!hasCreds) return { status: 'Missing Credentials' };
+                
                 await this.getClient();
             } catch (e) {
-                return { status: 'Disconnected', error: (e as Error).message };
+                return { status: 'Error', error: (e as Error).message };
             }
         }
         
-        if (this.client && this.client.connected) {
+        if (this.client) {
+            if (!this.client.connected) {
+                return { status: 'Reconnecting' };
+            }
+
             try {
                 const me = await this.client.getMe();
                 if (me instanceof Api.User) {
@@ -60,13 +71,17 @@ class TelegramService {
                         status: 'Connected',
                         username: me.username,
                         firstName: me.firstName,
+                        lastName: me.lastName,
                         phone: me.phone,
                         id: me.id.toString(),
                         isBot: me.bot
                     };
                 }
                 return { status: 'Connected' };
-            } catch (e) {
+            } catch (e: any) {
+                if (e.message.includes('migrate')) {
+                    return { status: 'DC Migration' };
+                }
                 return { status: 'Invalid Session', error: (e as Error).message };
             }
         }
@@ -84,9 +99,16 @@ class TelegramService {
 
         const session = new StringSession(this.config.session || "");
         this.client = new TelegramClient(session, parseInt(this.config.apiId), this.config.apiHash, {
-            connectionRetries: 5,
+            connectionRetries: 10,
+            autoReconnect: true,
+            retryDelay: 5000,
+            floodSleepThreshold: 60,
+            deviceModel: "AI Studio Server",
+            systemVersion: "Debian 12",
+            appVersion: "1.0.0"
         });
 
+        console.log("Connecting to Telegram MTProto...");
         await this.client.connect();
         return this.client;
     }
