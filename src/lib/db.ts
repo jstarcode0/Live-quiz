@@ -10,24 +10,29 @@ db.exec(`
     id TEXT PRIMARY KEY,
     username TEXT,
     title TEXT,
+    type TEXT,
+    category TEXT DEFAULT 'misc',
+    is_active INTEGER DEFAULT 1,
     last_sync_message_id INTEGER DEFAULT 0,
+    sync_status TEXT DEFAULT 'idle',
+    sync_progress TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS media (
-    id TEXT PRIMARY KEY,
-    telegram_id INTEGER,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id TEXT,
+    message_id INTEGER,
+    media_id TEXT,
     file_name TEXT,
-    caption TEXT,
     file_size INTEGER,
     mime_type TEXT,
-    thumb_path TEXT,
     category TEXT,
-    message_date DATETIME,
-    file_reference BLOB,
+    caption TEXT,
+    message_date INTEGER,
+    thumb_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(channel_id) REFERENCES channels(id)
+    UNIQUE(channel_id, message_id)
   );
 
   CREATE TABLE IF NOT EXISTS sync_logs (
@@ -54,7 +59,8 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_media_channel ON media(channel_id);
   CREATE INDEX IF NOT EXISTS idx_media_category ON media(category);
-  CREATE INDEX IF NOT EXISTS idx_media_file_name ON media(file_name);
+  CREATE INDEX IF NOT EXISTS idx_media_msg_date ON media(message_date);
+  CREATE INDEX IF NOT EXISTS idx_channels_active ON channels(is_active);
 `);
 
 export default db;

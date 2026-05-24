@@ -161,54 +161,119 @@ class TelegramService {
         return this.initPromise;
     }
 
-    async syncChannel(channelUsername: string) {
+    async getDialogs() {
         const client = await this.getClient();
+        const dialogs = await client.getDialogs({ limit: 100 });
         
+        return dialogs.map(d => ({
+            id: d.id.toString(),
+            title: d.title,
+            username: d.entity instanceof Api.Channel || d.entity instanceof Api.User ? d.entity.username : null,
+            type: d.isChannel ? 'channel' : d.isGroup ? 'group' : 'user',
+            unreadCount: d.unreadCount,
+            entity: d.entity
+        }));
+    }
+
+    async addChannel(id: string, username: string | null, title: string, type: string) {
+        db.prepare(`
+            INSERT OR REPLACE INTO channels (id, username, title, type, is_active)
+            VALUES (?, ?, ?, ?, 1)
+        `).run(id, username, title, type);
+        return { success: true };
+    }
+
+    async toggleChannelSync(id: string, active: boolean) {
+        db.prepare('UPDATE channels SET is_active = ? WHERE id = ?').run(active ? 1 : 0, id);
+    }
+
+    async getChannels() {
+        return db.prepare('SELECT * FROM channels ORDER BY updated_at DESC').all() as any[];
+    }
+
+    async syncAllActive() {
+        const activeChannels = db.prepare('SELECT * FROM channels WHERE is_active = 1').all() as any[];
+        for (const channel of activeChannels) {
+            // We'll run them sequentially to avoid flood limits
+            try {
+                await this.syncChannelRecursive(channel.id);
+            } catch (e) {
+                console.error(`Failed to sync channel ${channel.title}:`, e);
+            }
+        }
+    }
+
+    async syncChannelRecursive(channelId: string) {
+        const client = await this.getClient();
+        const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(channelId) as any;
+        if (!channel) throw new Error("Channel not in database");
+
+        db.prepare("UPDATE channels SET sync_status = 'syncing' WHERE id = ?").run(channelId);
+
         try {
-            const entity = await client.getEntity(channelUsername);
-            const channelId = entity.id.toString();
+            const entity = await client.getEntity(channelId);
+            let offsetId = 0;
+            let totalIndexed = 0;
+            const limit = 100;
+            let hasMore = true;
 
-            // Track channel in DB
-            db.prepare('INSERT OR IGNORE INTO channels (id, username, title) VALUES (?, ?, ?)')
-                .run(channelId, channelUsername, (entity as any).title || channelUsername);
+            console.log(`Starting deep sync for: ${channel.title} (${channelId})`);
 
-            const lastSync = db.prepare('SELECT last_sync_message_id FROM channels WHERE id = ?').get(channelId) as any;
-            const minId = lastSync?.last_sync_message_id || 0;
+            while (hasMore) {
+                const messages: Api.Message[] = await client.getMessages(entity, {
+                    limit,
+                    offsetId: offsetId,
+                }) as any;
 
-            let messages = await client.getMessages(entity, {
-                limit: 100,
-                // minId: minId // GramJS minId behavior can be tricky, might prefer reverse sync
-            });
+                if (messages.length === 0) {
+                    hasMore = false;
+                    break;
+                }
 
-            for (const msg of messages) {
-                if (msg.media) {
-                    await this.indexMedia(msg, channelId);
+                // Process batch
+                db.transaction(() => {
+                    for (const msg of messages) {
+                        if (msg.media) {
+                            this.indexMediaBatch(msg, channelId);
+                        }
+                    }
+                })();
+
+                totalIndexed += messages.length;
+                offsetId = messages[messages.length - 1].id;
+                
+                // Update progress in DB
+                db.prepare('UPDATE channels SET sync_progress = ? WHERE id = ?').run(`Indexed ${totalIndexed} messages...`, channelId);
+                console.log(`Channel ${channel.title}: Indexed ${totalIndexed} messages`);
+
+                // Small delay to respect flood limits
+                await new Promise(r => setTimeout(r, 500));
+
+                if (messages.length < limit) {
+                    hasMore = false;
                 }
             }
 
-            // Update last sync
-            if (messages.length > 0) {
-                const maxId = Math.max(...messages.map(m => m.id));
-                db.prepare('UPDATE channels SET last_sync_message_id = ? WHERE id = ?')
-                    .run(maxId, channelId);
-            }
-
-            return { success: true, count: messages.length };
-        } catch (error) {
-            console.error("Sync error:", error);
+            db.prepare("UPDATE channels SET sync_status = 'completed', sync_progress = 'Full history indexed' WHERE id = ?").run(channelId);
+            return { totalIndexed };
+        } catch (error: any) {
+            db.prepare("UPDATE channels SET sync_status = 'failed', sync_progress = ? WHERE id = ?")
+                .run(error.message, channelId);
             throw error;
         }
     }
 
-    private async indexMedia(msg: Api.Message, channelId: string) {
+    private indexMediaBatch(msg: Api.Message, channelId: string) {
         let fileName = "unnamed_file";
         let fileSize = 0;
         let mimeType = "application/octet-stream";
         let category = "other";
+        let mediaId = "";
 
         const media = msg.media;
         if (media instanceof Api.MessageMediaDocument) {
             const doc = media.document as Api.Document;
+            mediaId = doc.id.toString();
             fileSize = doc.size.toJSNumber();
             mimeType = doc.mimeType;
             
@@ -221,25 +286,41 @@ class TelegramService {
             else if (mimeType.includes('zip') || mimeType.includes('rar')) category = 'archive';
             else if (mimeType.startsWith('audio/')) category = 'audio';
         } else if (media instanceof Api.MessageMediaPhoto) {
+            const photo = media.photo as Api.Photo;
+            mediaId = photo.id.toString();
             fileName = `photo_${msg.id}.jpg`;
             category = 'image';
             mimeType = 'image/jpeg';
         }
 
+        if (!mediaId) return;
+
         db.prepare(`
-            INSERT OR REPLACE INTO media (id, telegram_id, channel_id, file_name, caption, file_size, mime_type, category, message_date)
+            INSERT OR REPLACE INTO media (channel_id, message_id, media_id, file_name, file_size, mime_type, category, caption, message_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-            `${channelId}_${msg.id}`,
-            msg.id,
             channelId,
+            msg.id,
+            mediaId,
             fileName,
-            msg.message || "",
             fileSize,
             mimeType,
             category,
-            new Date(msg.date * 1000).toISOString()
+            msg.message || "",
+            msg.date
         );
+    }
+
+    async syncChannel(channelUsername: string) {
+        // Fallback for direct username entry
+        const client = await this.getClient();
+        const entity = await client.getEntity(channelUsername);
+        const id = entity.id.toString();
+        const title = (entity as any).title || channelUsername;
+        const type = (entity as any).className === 'Channel' ? 'channel' : 'group';
+        
+        await this.addChannel(id, channelUsername, title, type);
+        return await this.syncChannelRecursive(id);
     }
 
     async streamMedia(mediaId: string, range?: string) {

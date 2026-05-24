@@ -33,14 +33,67 @@ router.get('/media', (req, res) => {
     res.json(media);
 });
 
-// Sync Channel
-router.post('/sync', async (req, res) => {
-    const { channel } = req.body;
-    if (!channel) return res.status(400).json({ error: 'Channel is required' });
-
+// Dynamic Discovery & Channels
+router.get('/dialogs', async (req, res) => {
     try {
-        const result = await telegramService.syncChannel(channel);
+        const dialogs = await telegramService.getDialogs();
+        res.json(dialogs);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.get('/channels', async (req, res) => {
+    try {
+        const channels = await telegramService.getChannels();
+        res.json(channels);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/channels/add', async (req, res) => {
+    const { id, username, title, type } = req.body;
+    try {
+        const result = await telegramService.addChannel(id, username, title, type);
         res.json(result);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/channels/toggle', async (req, res) => {
+    const { id, active } = req.body;
+    try {
+        await telegramService.toggleChannelSync(id, active);
+        res.json({ success: true });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Sync Engine
+router.post('/sync', async (req, res) => {
+    const { channelId, username } = req.body;
+    try {
+        if (channelId) {
+            await telegramService.syncChannelRecursive(channelId);
+            res.json({ success: true, message: 'Sync started' });
+        } else if (username) {
+            await telegramService.syncChannel(username);
+            res.json({ success: true, message: 'Sync completed' });
+        } else {
+            res.status(400).json({ error: 'channelId or username required' });
+        }
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/sync/all', async (req, res) => {
+    try {
+        telegramService.syncAllActive(); // Run in background
+        res.json({ success: true, message: 'Batch sync started in background' });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }

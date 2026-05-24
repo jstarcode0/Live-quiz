@@ -20,12 +20,27 @@ export default function TelegramAdminPanel() {
     const [phoneCodeHash, setPhoneCodeHash] = useState('');
     const [loginLoading, setLoginLoading] = useState(false);
 
+    const [dialogs, setDialogs] = useState<any[]>([]);
+    const [discoverMode, setDiscoverMode] = useState(false);
+    const [syncingAll, setSyncingAll] = useState(false);
+
     useEffect(() => {
         fetchStats();
         fetchStatus();
-        const interval = setInterval(fetchStatus, 10000); // Poll status every 10s
+        const interval = setInterval(() => {
+            fetchStatus();
+            fetchChannels(); // Also fetch channels to update progress
+        }, 5000);
         return () => clearInterval(interval);
     }, []);
+
+    const fetchChannels = async () => {
+        try {
+            const res = await fetch('/api/telegram/channels');
+            const data = await res.json();
+            if (stats) setStats({ ...stats, channels: data });
+        } catch (e) {}
+    };
 
     const fetchStats = async () => {
         setLoading(true);
@@ -50,13 +65,54 @@ export default function TelegramAdminPanel() {
         }
     };
 
-    const syncChannel = async (channel: string) => {
-        setSyncing(channel);
+    const discoverChannels = async () => {
+        setLoading(true);
+        try {
+            const res = await fetch('/api/telegram/dialogs');
+            const data = await res.json();
+            setDialogs(data);
+            setDiscoverMode(true);
+        } catch (e) {
+            alert('Failed to discover channels');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const addChannelFromDialog = async (dialog: any) => {
+        try {
+            await fetch('/api/telegram/channels/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    id: dialog.id, 
+                    title: dialog.title, 
+                    username: dialog.username, 
+                    type: dialog.type 
+                })
+            });
+            fetchStats();
+        } catch (e) {}
+    };
+
+    const toggleChannel = async (id: string, active: boolean) => {
+        try {
+            await fetch('/api/telegram/channels/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, active })
+            });
+            fetchStats();
+        } catch (e) {}
+    };
+
+    const startDeepSync = async (channelId: string) => {
+        setSyncing(channelId);
         try {
             const res = await fetch('/api/telegram/sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ channel })
+                body: JSON.stringify({ channelId })
             });
             if (res.ok) {
                 fetchStats();
@@ -68,6 +124,18 @@ export default function TelegramAdminPanel() {
             console.error(e);
         } finally {
             setSyncing(null);
+        }
+    };
+
+    const syncAllActive = async () => {
+        setSyncingAll(true);
+        try {
+            await fetch('/api/telegram/sync/all', { method: 'POST' });
+            alert('Batch sync started in background');
+        } catch (e) {
+            alert('Batch sync failed');
+        } finally {
+            setSyncingAll(false);
         }
     };
 
@@ -429,84 +497,153 @@ export default function TelegramAdminPanel() {
                         </section>
 
                         {/* Channel Management */}
-                        <section className="bg-zinc-900/40 border border-white/5 rounded-3xl p-8 shadow-2xl">
+                        <section className="bg-zinc-900/40 border border-white/5 rounded-3xl p-8 shadow-2xl transition-all">
                             <div className="flex justify-between items-center mb-8">
                                 <div className="flex items-center gap-3">
                                     <Database className="w-5 h-5 text-blue-500" />
-                                    <h2 className="text-sm font-black uppercase tracking-widest italic">Inventory Sources</h2>
+                                    <h2 className="text-sm font-black uppercase tracking-widest italic">Inventory & Sync Sources</h2>
                                 </div>
                                 <div className="flex gap-2">
                                     <button 
-                                        onClick={() => stats?.channels?.forEach((c: any) => syncChannel(c.username))}
-                                        disabled={!!syncing || status?.status !== 'Connected' || !stats?.channels?.length}
-                                        className="bg-zinc-800 hover:bg-zinc-700 text-slate-300 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all h-10 border border-white/5"
+                                        onClick={syncAllActive}
+                                        disabled={!!syncingAll || status?.status !== 'Connected' || !stats?.channels?.length}
+                                        className="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all h-10 shadow-lg shadow-blue-600/20 flex items-center gap-2"
                                     >
-                                        Sync All
+                                        {syncingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                                        Incremental Sync
                                     </button>
-                                    <input 
-                                        type="text" 
-                                        placeholder="@channel_username" 
-                                        value={newChannel}
-                                        onChange={(e) => setNewChannel(e.target.value)}
-                                        className="bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-2 text-xs font-mono focus:border-blue-500/50 outline-none w-48"
-                                    />
                                     <button 
-                                        onClick={() => syncChannel(newChannel)}
-                                        disabled={!newChannel || !!syncing || status?.status !== 'Connected'}
-                                        className="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all h-10 flex items-center gap-2"
+                                        onClick={discoverChannels}
+                                        disabled={status?.status !== 'Connected' || loading}
+                                        className="bg-zinc-800 hover:bg-zinc-700 text-slate-300 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all h-10 border border-white/5 flex items-center gap-2"
                                     >
-                                        {syncing === newChannel ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                                        Add Channel
+                                        <Plus className="w-4 h-4" />
+                                        Discover Channels
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {stats?.channels?.map((chan: any) => (
-                                    <div key={chan.id} className="flex flex-col p-5 bg-black/40 border border-white/5 rounded-2xl hover:border-white/10 transition-all group">
-                                        <div className="flex items-start justify-between mb-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20 text-blue-400 font-black text-xs uppercase italic tracking-tighter">
-                                                    {chan.username[0]}
+                            {discoverMode ? (
+                                <motion.div 
+                                    initial={{ opacity: 0, y: 10 }} 
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="space-y-4"
+                                >
+                                    <div className="flex items-center justify-between px-2">
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Available Channels & Groups ({dialogs.length})</p>
+                                        <button 
+                                            onClick={() => setDiscoverMode(false)}
+                                            className="text-[10px] font-black text-blue-500 uppercase tracking-widest hover:underline"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {dialogs.map(d => {
+                                            const isSaved = stats?.channels?.some((c: any) => c.id === d.id);
+                                            return (
+                                                <div key={d.id} className="flex items-center justify-between p-4 bg-black/40 border border-white/5 rounded-2xl">
+                                                    <div className="flex items-center gap-3 overflow-hidden">
+                                                        <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-[10px] font-black shrink-0">
+                                                            {d.title[0]}
+                                                        </div>
+                                                        <div className="overflow-hidden">
+                                                            <p className="text-xs font-black text-white truncate">{d.title}</p>
+                                                            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{d.type}</p>
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => addChannelFromDialog(d)}
+                                                        disabled={isSaved}
+                                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                                                            isSaved ? 'bg-green-500/10 text-green-500' : 'bg-blue-600 hover:bg-blue-500 text-white'
+                                                        }`}
+                                                    >
+                                                        {isSaved ? <CheckCircle2 className="w-3.5 h-3.5" /> : 'Add'}
+                                                    </button>
                                                 </div>
-                                                <div>
-                                                    <p className="text-sm font-black text-white leading-tight">{chan.title}</p>
-                                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">@{chan.username}</p>
+                                            );
+                                        })}
+                                    </div>
+                                </motion.div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {stats?.channels?.map((chan: any) => (
+                                        <div key={chan.id} className={`flex flex-col p-5 bg-black/40 border rounded-3xl transition-all group ${
+                                            chan.sync_status === 'syncing' ? 'border-blue-500/40 shadow-xl shadow-blue-500/5' : 'border-white/5 hover:border-white/10'
+                                        }`}>
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20 text-blue-400 font-black text-xs uppercase italic tracking-tighter shadow-inner">
+                                                        {chan.title[0]}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-black text-white leading-tight mb-0.5">{chan.title}</p>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[9px] font-black px-1.5 py-0.5 bg-zinc-800 text-slate-400 rounded uppercase tracking-tighter">{chan.type}</span>
+                                                            {chan.username && <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">@{chan.username}</p>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button 
+                                                        onClick={() => startDeepSync(chan.id)}
+                                                        disabled={syncing === chan.id || chan.sync_status === 'syncing'}
+                                                        className="p-2 bg-blue-600/10 text-blue-500 hover:bg-blue-600 hover:text-white rounded-xl transition-all"
+                                                        title="Deep History Sync"
+                                                    >
+                                                        <Database className={`w-4 h-4 ${chan.sync_status === 'syncing' ? 'animate-pulse' : ''}`} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => toggleChannel(chan.id, !chan.is_active)}
+                                                        className={`p-2 rounded-xl transition-all ${
+                                                            chan.is_active ? 'bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white' : 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white'
+                                                        }`}
+                                                    >
+                                                        <Power className="w-4 h-4" />
+                                                    </button>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-2">
-                                                <button 
-                                                    onClick={() => syncChannel(chan.username)}
-                                                    disabled={!!syncing || status?.status !== 'Connected'}
-                                                    className="p-2 bg-blue-600/10 text-blue-500 hover:bg-blue-600 hover:text-white rounded-lg transition-all"
-                                                >
-                                                    {syncing === chan.username ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                                                </button>
-                                                <button className="p-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-all">
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
+                                            <div className="mt-auto space-y-4 pt-4 border-t border-white/5">
+                                                <div className="flex justify-between items-center">
+                                                    <div className="space-y-1">
+                                                        <p className="text-[8px] font-black text-slate-600 uppercase tracking-[0.2em] mb-1">Current Activity</p>
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={`w-1.5 h-1.5 rounded-full ${
+                                                                chan.sync_status === 'syncing' ? 'bg-blue-500 animate-pulse shadow-[0_0_8px_#3b82f6]' : 
+                                                                chan.sync_status === 'completed' ? 'bg-green-500' :
+                                                                chan.sync_status === 'failed' ? 'bg-red-500' : 'bg-slate-700'
+                                                            }`} />
+                                                            <p className="text-[10px] font-black text-white italic uppercase tracking-tighter">{chan.sync_status}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-[8px] font-black text-slate-600 uppercase tracking-[0.2em] mb-1">Messages</p>
+                                                        <p className="text-[10px] font-mono text-blue-400 font-bold">{chan.last_sync_message_id}</p>
+                                                    </div>
+                                                </div>
+                                                {chan.sync_progress && (
+                                                    <div className="p-3 bg-black/60 rounded-xl border border-white/5">
+                                                        <p className="text-[10px] font-mono text-slate-400 leading-tight">
+                                                            <span className="text-blue-500 font-bold uppercase text-[8px] mr-2 tracking-widest">Progress:</span>
+                                                            {chan.sync_progress}
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                        <div className="flex justify-between items-end pt-4 border-t border-white/5">
-                                            <div>
-                                                <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Last Sync Progress</p>
-                                                <p className="text-[10px] font-mono text-blue-400">Idx: {chan.last_sync_message_id}</p>
+                                    ))}
+                                    {(!stats?.channels || stats.channels.length === 0) && (
+                                        <div className="col-span-full text-center py-20 border-2 border-dashed border-white/5 rounded-3xl group hover:border-white/10 transition-all cursor-pointer" onClick={discoverChannels}>
+                                            <div className="w-16 h-16 bg-white/5 rounded-3xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
+                                                <Terminal className="w-8 h-8 text-slate-700" />
                                             </div>
-                                            <div className="text-right">
-                                                 <span className="text-[9px] font-black px-2 py-0.5 bg-green-500/10 text-green-500 rounded-full border border-green-500/20 uppercase tracking-tighter">
-                                                     Ready
-                                                 </span>
-                                            </div>
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mb-2">No data sources configured</p>
+                                            <p className="text-xs text-slate-600 font-medium">Click to discover joined channels</p>
                                         </div>
-                                    </div>
-                                ))}
-                                {(!stats?.channels || stats.channels.length === 0) && (
-                                    <div className="col-span-full text-center py-12 border-2 border-dashed border-white/5 rounded-3xl">
-                                        <Database className="w-12 h-12 text-slate-800 mx-auto mb-4" />
-                                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">No data sources defined</p>
-                                    </div>
-                                )}
-                            </div>
+                                    )}
+                                </div>
+                            )}
                         </section>
                     </div>
 
