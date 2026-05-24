@@ -9,7 +9,7 @@ const router = express.Router();
 
 // Search and List Media
 router.get('/media', (req, res) => {
-    const { q, categoryId, mainTopicId, subTopicId, limit = 50, offset = 0 } = req.query;
+    const { q, categoryId, mainTopicId, subTopicId, channelId, limit = 50, offset = 0 } = req.query;
     
     let query = 'SELECT m.*, c.title as channel_name FROM media m JOIN channels c ON m.channel_id = c.id WHERE 1=1';
     const params: any[] = [];
@@ -29,6 +29,10 @@ router.get('/media', (req, res) => {
     if (subTopicId) {
         query += ' AND m.sub_topic_id = ?';
         params.push(subTopicId);
+    }
+    if (channelId) {
+        query += ' AND m.channel_id = ?';
+        params.push(channelId);
     }
 
     query += ' ORDER BY m.message_date DESC LIMIT ? OFFSET ?';

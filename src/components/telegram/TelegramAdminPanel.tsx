@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export default function TelegramAdminPanel() {
     const [stats, setStats] = useState<any>(null);
     const [status, setStatus] = useState<any>(null);
+    const [channels, setChannels] = useState<any[]>([]);
     const [syncing, setSyncing] = useState<string | null>(null);
     const [newChannel, setNewChannel] = useState('');
     const [loading, setLoading] = useState(true);
@@ -27,6 +28,7 @@ export default function TelegramAdminPanel() {
     useEffect(() => {
         fetchStats();
         fetchStatus();
+        fetchChannels();
         const interval = setInterval(() => {
             fetchStatus();
             fetchChannels(); // Also fetch channels to update progress
@@ -38,8 +40,8 @@ export default function TelegramAdminPanel() {
         try {
             const res = await fetch('/api/telegram/channels');
             const data = await res.json();
-            if (stats && Array.isArray(data)) {
-                setStats({ ...stats, channels: data });
+            if (Array.isArray(data)) {
+                setChannels(data);
             }
         } catch (e) {}
     };
@@ -99,6 +101,7 @@ export default function TelegramAdminPanel() {
                 })
             });
             fetchStats();
+            fetchChannels();
         } catch (e) {}
     };
 
@@ -110,6 +113,7 @@ export default function TelegramAdminPanel() {
                 body: JSON.stringify({ id, active })
             });
             fetchStats();
+            fetchChannels();
         } catch (e) {}
     };
 
@@ -123,6 +127,7 @@ export default function TelegramAdminPanel() {
             });
             if (res.ok) {
                 fetchStats();
+                fetchChannels();
             } else {
                 const err = await res.json();
                 alert(err.error);
@@ -528,7 +533,7 @@ export default function TelegramAdminPanel() {
                                 <div className="flex gap-2">
                                     <button 
                                         onClick={syncAllActive}
-                                        disabled={!!syncingAll || status?.status !== 'Connected' || !stats?.channels?.length}
+                                        disabled={!!syncingAll || status?.status !== 'Connected' || !channels?.length}
                                         className="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all h-10 shadow-lg shadow-blue-600/20 flex items-center gap-2"
                                     >
                                         {syncingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -562,7 +567,7 @@ export default function TelegramAdminPanel() {
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                                         {dialogs?.map(d => {
-                                            const isSaved = stats?.channels?.some((c: any) => c.id === d.id);
+                                            const isSaved = channels?.some((c: any) => c.id === d.id);
                                             return (
                                                 <div key={d.id} className="flex items-center justify-between p-4 bg-black/40 border border-white/5 rounded-2xl">
                                                     <div className="flex items-center gap-3 overflow-hidden">
@@ -595,7 +600,7 @@ export default function TelegramAdminPanel() {
                                 </motion.div>
                             ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {stats?.channels?.map((chan: any) => (
+                                    {channels?.map((chan: any) => (
                                         <div key={chan.id} className={`flex flex-col p-5 bg-black/40 border rounded-3xl transition-all group ${
                                             chan.sync_status === 'syncing' ? 'border-blue-500/40 shadow-xl shadow-blue-500/5' : 'border-white/5 hover:border-white/10'
                                         }`}>

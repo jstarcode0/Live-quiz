@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Filter, Play, Download, FileText, Image as ImageIcon, Music, Archive, File, Loader2, ChevronRight, Bookmark, History, TrendingUp } from 'lucide-react';
+import { Search, Filter, Play, Download, FileText, Image as ImageIcon, Music, Archive, File, Loader2, ChevronRight, Bookmark, History, TrendingUp, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MediaItem {
@@ -33,11 +33,13 @@ interface Topic {
 }
 
 export default function TelegramMediaLibrary() {
-    const [view, setView] = useState<'categories' | 'topics' | 'subtopics' | 'media'>('categories');
+    const [view, setView] = useState<'categories' | 'topics' | 'subtopics' | 'media' | 'channels'>('categories');
+    const [mode, setMode] = useState<'course' | 'channels'>('course');
     const [path, setPath] = useState<{id: string, name: string, type: string}[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [topics, setTopics] = useState<Topic[]>([]);
     const [subTopics, setSubTopics] = useState<Topic[]>([]);
+    const [channels, setChannels] = useState<any[]>([]);
     const [media, setMedia] = useState<MediaItem[]>([]);
     
     const [loading, setLoading] = useState(true);
@@ -50,7 +52,7 @@ export default function TelegramMediaLibrary() {
         } else {
             loadViewData();
         }
-    }, [view, path, searchQuery]);
+    }, [view, path, searchQuery, mode]);
 
     const loadViewData = async () => {
         setLoading(true);
@@ -58,6 +60,9 @@ export default function TelegramMediaLibrary() {
             if (view === 'categories') {
                 const res = await fetch('/api/telegram/categories');
                 setCategories(await res.json());
+            } else if (view === 'channels') {
+                const res = await fetch('/api/telegram/channels');
+                setChannels(await res.json());
             } else if (view === 'topics') {
                 const categoryId = path[path.length - 1].id;
                 const res = await fetch(`/api/telegram/topics/${categoryId}`);
@@ -67,8 +72,15 @@ export default function TelegramMediaLibrary() {
                 const res = await fetch(`/api/telegram/subtopics/${mainTopicId}`);
                 setSubTopics(await res.json());
             } else if (view === 'media') {
-                const subTopicId = path[path.length - 1].id;
-                const res = await fetch(`/api/telegram/media/hierarchy/${subTopicId}`);
+                const last = path[path.length - 1];
+                let url = '';
+                if (last.type === 'subtopic') {
+                    url = `/api/telegram/media/hierarchy/${last.id}`;
+                } else if (last.type === 'channel') {
+                    // For channel mode, we might want a different endpoint or filter
+                    url = `/api/telegram/media?channelId=${last.id}`;
+                }
+                const res = await fetch(url);
                 setMedia(await res.json());
             }
         } catch (e) {
@@ -105,17 +117,23 @@ export default function TelegramMediaLibrary() {
         setPath([...path, { id, name, type }]);
         if (type === 'category') setView('topics');
         else if (type === 'topic') setView('subtopics');
-        else if (type === 'subtopic') setView('media');
+        else if (type === 'subtopic' || type === 'channel') setView('media');
     };
 
     const goBack = (index: number) => {
         const newPath = path.slice(0, index + 1);
         setPath(newPath);
         const last = newPath[newPath.length - 1];
-        if (!last) setView('categories');
+        if (!last) setView(mode === 'course' ? 'categories' : 'channels');
         else if (last.type === 'category') setView('topics');
         else if (last.type === 'topic') setView('subtopics');
-        else if (last.type === 'subtopic') setView('media');
+        else if (last.type === 'subtopic' || last.type === 'channel') setView('media');
+    };
+
+    const toggleMode = (newMode: 'course' | 'channels') => {
+        setMode(newMode);
+        setPath([]);
+        setView(newMode === 'course' ? 'categories' : 'channels');
     };
 
     return (
@@ -123,13 +141,30 @@ export default function TelegramMediaLibrary() {
             {/* Nav & Search */}
             <header className="p-6 border-b border-white/5 bg-black/40 backdrop-blur-2xl sticky top-0 z-20">
                 <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-6 justify-between items-center">
-                    <div className="flex items-center gap-4 cursor-pointer" onClick={() => { setPath([]); setView('categories'); setSearchQuery(''); }}>
-                        <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/20">
-                            <Play className="w-6 h-6 text-white fill-current" />
+                    <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-4 cursor-pointer" onClick={() => { setPath([]); setView(mode === 'course' ? 'categories' : 'channels'); setSearchQuery(''); }}>
+                            <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/20">
+                                <Play className="w-6 h-6 text-white fill-current" />
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-black tracking-tighter uppercase italic bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">ACADEMY</h1>
+                                <p className="text-[9px] text-blue-500 font-bold uppercase tracking-[0.2em] leading-none">Cloud Streaming Flow</p>
+                            </div>
                         </div>
-                        <div>
-                            <h1 className="text-2xl font-black tracking-tighter uppercase italic bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">ACADEMY</h1>
-                            <p className="text-[9px] text-blue-500 font-bold uppercase tracking-[0.2em] leading-none">Cloud Streaming Flow</p>
+
+                        <div className="hidden lg:flex items-center bg-white/5 p-1 rounded-2xl border border-white/5">
+                            <button 
+                                onClick={() => toggleMode('course')}
+                                className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${mode === 'course' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                            >
+                                Academy
+                            </button>
+                            <button 
+                                onClick={() => toggleMode('channels')}
+                                className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${mode === 'channels' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                            >
+                                Channels
+                            </button>
                         </div>
                     </div>
 
@@ -211,6 +246,27 @@ export default function TelegramMediaLibrary() {
                                             <CategoryCard key={cat.id} category={cat} onClick={() => navigateTo(cat.id, cat.name, 'category')} />
                                         ))}
                                     </div>
+                                ) : view === 'channels' ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                        {channels.map((chan) => (
+                                            <motion.div 
+                                                key={chan.id}
+                                                whileHover={{ y: -5, scale: 1.02 }}
+                                                onClick={() => navigateTo(chan.id, chan.title, 'channel')}
+                                                className="group relative h-48 bg-zinc-900/40 rounded-3xl p-6 border border-white/5 cursor-pointer overflow-hidden backdrop-blur-sm"
+                                            >
+                                                <div className="flex flex-col h-full justify-between">
+                                                    <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center border border-white/10 group-hover:bg-blue-600 transition-all">
+                                                        <Database className="w-5 h-5 text-slate-400 group-hover:text-white" />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-lg font-black tracking-tight text-white mb-1 group-hover:text-blue-400 transition-colors truncate">{chan.title}</h3>
+                                                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{chan.type} • {chan.username ? `@${chan.username}` : 'Private'}</p>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                    </div>
                                 ) : view === 'topics' ? (
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                         {topics.map((topic) => (
@@ -225,12 +281,12 @@ export default function TelegramMediaLibrary() {
                                     </div>
                                 )}
 
-                                {((view === 'media' && media.length === 0) || (view === 'categories' && categories.length === 0)) && !loading && (
+                                {((view === 'media' && media.length === 0) || (view === 'categories' && categories.length === 0) || (view === 'channels' && channels.length === 0)) && !loading && (
                                     <div className="flex flex-col items-center justify-center h-[50vh] text-slate-700">
                                         <Archive className="w-16 h-16 mb-6 opacity-10" />
                                         <p className="text-lg font-black tracking-tighter uppercase italic">No Content Discovered</p>
                                         <button 
-                                            onClick={() => { setPath([]); setView('categories'); setSearchQuery(''); }}
+                                            onClick={() => { setPath([]); setView(mode === 'course' ? 'categories' : 'channels'); setSearchQuery(''); }}
                                             className="mt-6 px-8 py-3 bg-white/5 border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all text-slate-400"
                                         >
                                             Return to Library
