@@ -163,16 +163,28 @@ class TelegramService {
 
     async getDialogs() {
         const client = await this.getClient();
+        // Increase limit slightly but keep it reasonable
         const dialogs = await client.getDialogs({ limit: 100 });
         
-        return dialogs.map(d => ({
-            id: d.id.toString(),
-            title: d.title,
-            username: d.entity instanceof Api.Channel || d.entity instanceof Api.User ? d.entity.username : null,
-            type: d.isChannel ? 'channel' : d.isGroup ? 'group' : 'user',
-            unreadCount: d.unreadCount,
-            entity: d.entity
-        }));
+        return dialogs
+            .filter(d => d.isChannel || d.isGroup) // Only channels and groups
+            .map(d => {
+                let username = null;
+                if (d.entity instanceof Api.Channel) {
+                    username = d.entity.username;
+                } else if (d.entity instanceof Api.Chat) {
+                    // Chats don't have usernames usually
+                }
+
+                return {
+                    id: d.id.toString(),
+                    title: d.title || "Untitled",
+                    username: username,
+                    type: d.isChannel ? 'channel' : 'group',
+                    unreadCount: d.unreadCount || 0,
+                    participantsCount: (d.entity as any).participantsCount || 0
+                };
+            });
     }
 
     async addChannel(id: string, username: string | null, title: string, type: string) {

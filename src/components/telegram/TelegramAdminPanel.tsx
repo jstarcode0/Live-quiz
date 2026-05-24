@@ -38,7 +38,9 @@ export default function TelegramAdminPanel() {
         try {
             const res = await fetch('/api/telegram/channels');
             const data = await res.json();
-            if (stats) setStats({ ...stats, channels: data });
+            if (stats && Array.isArray(data)) {
+                setStats({ ...stats, channels: data });
+            }
         } catch (e) {}
     };
 
@@ -69,11 +71,16 @@ export default function TelegramAdminPanel() {
         setLoading(true);
         try {
             const res = await fetch('/api/telegram/dialogs');
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Failed to fetch dialogs');
+            }
             const data = await res.json();
-            setDialogs(data);
+            setDialogs(Array.isArray(data) ? data : []);
             setDiscoverMode(true);
-        } catch (e) {
-            alert('Failed to discover channels');
+        } catch (e: any) {
+            console.error("Discovery Error:", e);
+            alert(`Discovery Error: ${e.message}`);
         } finally {
             setLoading(false);
         }
@@ -539,13 +546,13 @@ export default function TelegramAdminPanel() {
                                         </button>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                                        {dialogs.map(d => {
+                                        {dialogs?.map(d => {
                                             const isSaved = stats?.channels?.some((c: any) => c.id === d.id);
                                             return (
                                                 <div key={d.id} className="flex items-center justify-between p-4 bg-black/40 border border-white/5 rounded-2xl">
                                                     <div className="flex items-center gap-3 overflow-hidden">
                                                         <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-[10px] font-black shrink-0">
-                                                            {d.title[0]}
+                                                            {(d.title || '?')[0]}
                                                         </div>
                                                         <div className="overflow-hidden">
                                                             <p className="text-xs font-black text-white truncate">{d.title}</p>
@@ -564,6 +571,11 @@ export default function TelegramAdminPanel() {
                                                 </div>
                                             );
                                         })}
+                                        {dialogs?.length === 0 && (
+                                            <div className="col-span-full py-10 text-center text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                                                No channels detected
+                                            </div>
+                                        )}
                                     </div>
                                 </motion.div>
                             ) : (
@@ -575,7 +587,7 @@ export default function TelegramAdminPanel() {
                                             <div className="flex items-start justify-between mb-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20 text-blue-400 font-black text-xs uppercase italic tracking-tighter shadow-inner">
-                                                        {chan.title[0]}
+                                                        {(chan.title || '?')[0]}
                                                     </div>
                                                     <div>
                                                         <p className="text-sm font-black text-white leading-tight mb-0.5">{chan.title}</p>
