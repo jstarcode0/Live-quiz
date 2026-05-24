@@ -96,7 +96,8 @@ class TelegramService {
                         lastName: me.lastName,
                         phone: me.phone,
                         id: me.id.toString(),
-                        isBot: me.bot
+                        isBot: me.bot,
+                        dcId: this.client.session.dcId
                     };
                 }
                 return { status: 'Connected' };
@@ -163,6 +164,13 @@ class TelegramService {
 
     async getDialogs() {
         const client = await this.getClient();
+        
+        // Verify account type - discovery REQUIRES User account (not Bot)
+        const me = await client.getMe();
+        if (me instanceof Api.User && me.bot) {
+            throw new Error("BOT_ACCOUNT_RESTRICTED: Your account is a BOT account. Telegram MTProto Discovery and Library syncing are only available for REAL User accounts. Please connect a User Session.");
+        }
+
         // Increase limit slightly but keep it reasonable
         const dialogs = await client.getDialogs({ limit: 100 });
         

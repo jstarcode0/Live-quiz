@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, RefreshCw, Plus, Trash2, Database, Key, ShieldCheck, Activity, BarChart3, AlertTriangle, Loader2, CheckCircle2, Phone, Lock, User, Terminal, LogOut, Power, Wifi, WifiOff } from 'lucide-react';
+import { Settings, RefreshCw, Plus, Trash2, Database, Key, ShieldCheck, Activity, BarChart3, AlertTriangle, AlertCircle, Loader2, CheckCircle2, Phone, Lock, User, Terminal, LogOut, Power, Wifi, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function TelegramAdminPanel() {
@@ -244,16 +244,18 @@ export default function TelegramAdminPanel() {
                     <div className="flex items-center gap-4">
                         {status && (
                             <div className={`px-4 py-2 rounded-full flex items-center gap-2 border transition-all duration-500 bg-opacity-10 ${
-                                status.status === 'Connected' ? 'bg-green-500 border-green-500/20 text-green-500' : 
+                                status.status === 'Connected' ? (status.isBot ? 'bg-red-500 border-red-500/20 text-red-500' : 'bg-green-500 border-green-500/20 text-green-500') : 
                                 status.status === 'Reconnecting' || status.status === 'DC Timeout' ? 'bg-amber-500 border-amber-500/20 text-amber-500' :
                                 status.status === 'DC Migration' ? 'bg-blue-500 border-blue-500/20 text-blue-500' :
                                 'bg-red-500 border-red-500/20 text-red-500'
                             }`}>
-                                {status.status === 'Connected' ? <Wifi className="w-4 h-4" /> : 
+                                {status.status === 'Connected' ? (status.isBot ? <AlertTriangle className="w-4 h-4" /> : <Wifi className="w-4 h-4" />) : 
                                  status.status === 'Reconnecting' || status.status === 'DC Timeout' ? <RefreshCw className="w-4 h-4 animate-spin" /> :
                                  status.status === 'DC Migration' ? <Activity className="w-4 h-4 animate-pulse" /> :
                                  <WifiOff className="w-4 h-4" />}
-                                <span className="text-[10px] font-black uppercase tracking-widest">{status.status}</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest">
+                                    {status.status === 'Connected' && status.isBot ? 'Bot Connected (Limited)' : status.status}
+                                </span>
                             </div>
                         )}
                         <button 
@@ -283,22 +285,35 @@ export default function TelegramAdminPanel() {
                              {status?.status === 'Connected' ? (
                                 <div className="space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                                        <div className={`bg-black/40 p-4 rounded-2xl border ${status.isBot ? 'border-red-500/30' : 'border-white/5'}`}>
                                             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Authenticated Account</p>
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 bg-blue-600/20 rounded-xl flex items-center justify-center border border-blue-500/30">
-                                                    <User className="w-5 h-5 text-blue-400" />
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${status.isBot ? 'bg-red-500/20 border-red-500/40' : 'bg-blue-600/20 border-blue-500/30'}`}>
+                                                    {status.isBot ? <AlertCircle className="w-5 h-5 text-red-500" /> : <User className="w-5 h-5 text-blue-400" />}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-black text-white">{(status.firstName || '') + ' ' + (status.lastName || '') || 'Telegram User'}</p>
-                                                    <p className="text-[10px] font-bold text-slate-400">@{status.username || 'unknown'}</p>
+                                                    <p className="text-sm font-black text-white">{(status.firstName || '') + ' ' + (status.lastName || '') || 'Telegram Account'}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-[10px] font-bold text-slate-400">@{status.username || 'unknown'}</p>
+                                                        <span className={`text-[8px] px-1 py-0.5 rounded uppercase font-black tracking-tighter ${status.isBot ? 'bg-red-500 text-white' : 'bg-green-500/20 text-green-500'}`}>
+                                                            {status.isBot ? 'BOT ACCOUNT' : 'USER ACCOUNT'}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
+                                            {status.isBot && (
+                                                <div className="mt-4 p-3 bg-red-500/10 rounded-xl border border-red-500/20">
+                                                    <p className="text-[9px] text-red-400 font-bold uppercase tracking-widest leading-tight">
+                                                        Warning: Bots cannot use GetDialogs. Syncing requires a real MTProto User Session (StringSession).
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
-                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Security Info</p>
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Infrastructure Info</p>
                                             <div className="space-y-1">
                                                 <p className="text-xs text-slate-300 font-mono tracking-tight"><span className="text-slate-500 uppercase font-sans font-bold text-[9px]">ID:</span> {status.id}</p>
+                                                <p className="text-xs text-slate-300 font-mono tracking-tight"><span className="text-slate-500 uppercase font-sans font-bold text-[9px]">DC ID:</span> {status.dcId || '1'}</p>
                                                 <p className="text-xs text-slate-300 font-mono tracking-tight"><span className="text-slate-500 uppercase font-sans font-bold text-[9px]">Phone:</span> +{status.phone}</p>
                                             </div>
                                         </div>
