@@ -1,6 +1,7 @@
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { Api } from "telegram/tl/index.js";
+import bigInt from "big-integer";
 import db from "../lib/db.js";
 import fs from "fs";
 import path from "path";
@@ -174,14 +175,29 @@ class TelegramService {
         // Increase limit slightly but keep it reasonable
         const dialogs = await client.getDialogs({ limit: 100 });
         
+        // Save entities to cache
+        db.transaction(() => {
+            const stmt = db.prepare(`
+                INSERT OR REPLACE INTO entities (id, access_hash, type, username, title)
+                VALUES (?, ?, ?, ?, ?)
+            `);
+            for (const d of dialogs) {
+                const entity = d.entity;
+                if (entity instanceof Api.Channel || entity instanceof Api.Chat || entity instanceof Api.User) {
+                    const id = d.id.toString();
+                    const accessHash = (entity as any).accessHash ? (entity as any).accessHash.toString() : null;
+                    const type = d.isChannel ? 'channel' : d.isGroup ? 'group' : 'user';
+                    stmt.run(id, accessHash, type, d.name || (entity as any).username, d.title);
+                }
+            }
+        })();
+
         return dialogs
             .filter(d => d.isChannel || d.isGroup) // Only channels and groups
             .map(d => {
                 let username = null;
                 if (d.entity instanceof Api.Channel) {
                     username = d.entity.username;
-                } else if (d.entity instanceof Api.Chat) {
-                    // Chats don't have usernames usually
                 }
 
                 return {
@@ -193,6 +209,26 @@ class TelegramService {
                     participantsCount: (d.entity as any).participantsCount || 0
                 };
             });
+    }
+
+    async resolveEntity(id: string): Promise<any> {
+        const client = await this.getClient();
+        
+        try {
+            // Try built-in getEntity first
+            return await client.getEntity(id);
+        } catch (e) {
+            // Fallback to database cache
+            const cached = db.prepare('SELECT * FROM entities WHERE id = ?').get(id) as any;
+            if (cached && cached.access_hash) {
+                if (cached.type === 'channel') {
+                    return new Api.InputPeerChannel({ channelId: bigInt(id) as any, accessHash: bigInt(cached.access_hash) as any });
+                } else if (cached.type === 'user') {
+                    return new Api.InputPeerUser({ userId: bigInt(id) as any, accessHash: bigInt(cached.access_hash) as any });
+                }
+            }
+            throw e;
+        }
     }
 
     async addChannel(id: string, username: string | null, title: string, type: string) {
@@ -231,7 +267,7 @@ class TelegramService {
         db.prepare("UPDATE channels SET sync_status = 'syncing' WHERE id = ?").run(channelId);
 
         try {
-            const entity = await client.getEntity(channelId);
+            const entity = await this.resolveEntity(channelId);
             let offsetId = 0;
             let totalIndexed = 0;
             const limit = 100;
@@ -339,22 +375,70 @@ class TelegramService {
         const title = (entity as any).title || channelUsername;
         const type = (entity as any).className === 'Channel' ? 'channel' : 'group';
         
+        // Save to entities cache
+        db.prepare(`
+            INSERT OR REPLACE INTO entities (id, access_hash, type, username, title)
+            VALUES (?, ?, ?, ?, ?)
+        `).run(
+            id, 
+            (entity as any).accessHash ? (entity as any).accessHash.toString() : null,
+            type,
+            (entity as any).username || channelUsername,
+            title
+        );
+
         await this.addChannel(id, channelUsername, title, type);
         return await this.syncChannelRecursive(id);
     }
 
-    async streamMedia(mediaId: string, range?: string) {
-        const [channelId, msgId] = mediaId.split('_');
+    async getMediaStream(channelId: string, msgId: number, start: number, end: number) {
         const client = await this.getClient();
+        const entity = await this.resolveEntity(channelId);
         
-        const messages = await client.getMessages(channelId, { ids: [parseInt(msgId)] });
+        const messages = await client.getMessages(entity, { ids: [msgId] });
         const msg = messages[0];
-
         if (!msg || !msg.media) throw new Error("Media not found");
 
-        // This is a simplified stream logic. In production we'd use downloadFile with offsets.
-        // GramJS downloadFile supports range-like streaming if we pipe it correctly.
-        return { msg, client };
+        let size = 0;
+        let mimeType = "application/octet-stream";
+        if (msg.media instanceof Api.MessageMediaDocument) {
+            size = (msg.media.document as Api.Document).size.toJSNumber();
+            mimeType = (msg.media.document as Api.Document).mimeType;
+        } else if (msg.media instanceof Api.MessageMediaPhoto) {
+            const photo = msg.media.photo as Api.Photo;
+            const largest = photo.sizes[photo.sizes.length - 1];
+            if ((largest as any).size) size = (largest as any).size;
+            mimeType = "image/jpeg";
+        }
+
+        const stream = client.iterDownload({
+            file: msg.media,
+            offset: bigInt(start) as any,
+            limit: (end - start + 1),
+            requestSize: 1024 * 128
+        });
+
+        return { stream, size, mimeType };
+    }
+
+    async getThumbnail(channelId: string, msgId: number) {
+        const client = await this.getClient();
+        const entity = await this.resolveEntity(channelId);
+        const messages = await client.getMessages(entity, { ids: [msgId] });
+        const msg = messages[0];
+        if (!msg || !msg.media) return null;
+
+        try {
+            if (msg.media instanceof Api.MessageMediaDocument) {
+                // Try to get thumbnail for document
+                return await client.downloadMedia(msg.media, { thumbKind: "i" }); // 'i' or 'm' are common
+            } else if (msg.media instanceof Api.MessageMediaPhoto) {
+                return await client.downloadMedia(msg.media, { thumbKind: "m" });
+            }
+            return await client.downloadMedia(msg.media, {});
+        } catch (e) {
+            return null;
+        }
     }
 
     async startLogin(phoneNumber: string) {

@@ -6,6 +6,15 @@ const db = new Database(dbPath);
 
 // Initialize schema
 db.exec(`
+  CREATE TABLE IF NOT EXISTS entities (
+    id TEXT PRIMARY KEY,
+    access_hash TEXT,
+    type TEXT,
+    username TEXT,
+    title TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS channels (
     id TEXT PRIMARY KEY,
     username TEXT,

@@ -162,6 +162,8 @@ function MediaCard({ item, formatSize, onSelect }: MediaCardProps) {
         }
     };
 
+    const hasThumbnail = item.category === 'image' || item.category === 'video';
+
     return (
         <motion.div 
             layout
@@ -172,9 +174,21 @@ function MediaCard({ item, formatSize, onSelect }: MediaCardProps) {
         >
             <div className="aspect-[16/10] bg-zinc-800 flex items-center justify-center relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10" />
-                <div className="text-white/20 transform group-hover:scale-110 transition-transform duration-500">
-                    {getIcon()}
-                </div>
+                
+                {hasThumbnail ? (
+                   <img 
+                      src={`/api/telegram/thumb/${item.id}`} 
+                      alt="" 
+                      className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-700 opacity-60 group-hover:opacity-100"
+                      onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                   />
+                ) : (
+                   <div className="text-white/20 transform group-hover:scale-110 transition-transform duration-500">
+                       {getIcon()}
+                   </div>
+                )}
                 
                 <div className="absolute top-2 right-2 z-20">
                     <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded shadow-lg uppercase tracking-tighter">
@@ -201,7 +215,10 @@ function MediaCard({ item, formatSize, onSelect }: MediaCardProps) {
                     <button className="p-1.5 hover:bg-blue-600/20 text-slate-400 hover:text-blue-500 rounded transition-colors">
                         <Bookmark className="w-3.5 h-3.5" />
                     </button>
-                    <button className="p-1.5 hover:bg-blue-600/20 text-slate-400 hover:text-blue-500 rounded transition-colors">
+                    <button className="p-1.5 hover:bg-blue-600/20 text-slate-400 hover:text-blue-500 rounded transition-colors" onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(`/api/telegram/stream/${item.id}`, '_blank');
+                    }}>
                         <Download className="w-3.5 h-3.5" />
                     </button>
                 </div>
@@ -211,6 +228,8 @@ function MediaCard({ item, formatSize, onSelect }: MediaCardProps) {
 }
 
 function MediaViewer({ item, onClose }: { item: MediaItem; onClose: () => void }) {
+    const videoRef = useRef<HTMLVideoElement>(null);
+
     return (
         <motion.div 
             initial={{ opacity: 0 }}
@@ -224,42 +243,53 @@ function MediaViewer({ item, onClose }: { item: MediaItem; onClose: () => void }
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
-                className="w-full max-w-5xl bg-zinc-900 border border-white/10 rounded-2xl overflow-hidden shadow-2xl relative z-10 flex flex-col md:flex-row h-[80vh]"
+                className="w-full max-w-6xl bg-zinc-900 border border-white/10 rounded-2xl overflow-hidden shadow-2xl relative z-10 flex flex-col md:flex-row h-[85vh]"
             >
                 {/* Close Button */}
                 <button 
                     onClick={onClose}
-                    className="absolute top-4 right-4 z-30 p-2 bg-black/50 text-white rounded-full hover:bg-white/10 transition-colors"
+                    className="absolute top-4 right-4 z-40 p-2 bg-black/50 text-white rounded-full hover:bg-white/10 transition-colors"
                 >
                     <Archive className="w-5 h-5 rotate-45" />
                 </button>
 
                 {/* Player/Preview Area */}
-                <div className="flex-[2] bg-black flex items-center justify-center relative">
+                <div className="flex-[2.5] bg-black flex items-center justify-center relative">
                     {item.category === 'video' ? (
                         <video 
+                            ref={videoRef}
                             controls 
                             autoPlay
                             className="w-full h-full object-contain"
                             src={`/api/telegram/stream/${item.id}`}
-                        />
+                            poster={`/api/telegram/thumb/${item.id}`}
+                        >
+                            Your browser does not support the video tag.
+                        </video>
                     ) : item.category === 'image' ? (
                         <img 
                             src={`/api/telegram/stream/${item.id}`} 
                             alt={item.file_name}
                             className="max-w-full max-h-full object-contain shadow-2xl"
                         />
+                    ) : item.category === 'pdf' ? (
+                        <iframe 
+                            src={`/api/telegram/stream/${item.id}#toolbar=0`} 
+                            className="w-full h-full bg-white"
+                            title={item.file_name}
+                        />
                     ) : (
                         <div className="flex flex-col items-center justify-center text-slate-500">
                             <FileText className="w-20 h-20 mb-4 opacity-10" />
-                            <p className="text-sm font-bold uppercase tracking-widest underline decoration-blue-500 underline-offset-4">Preview not supported in modal</p>
+                            <p className="text-sm font-bold uppercase tracking-widest underline decoration-blue-500 underline-offset-4">Advanced Preview</p>
                             <a 
                                 href={`/api/telegram/stream/${item.id}`} 
                                 target="_blank" 
                                 rel="noreferrer"
-                                className="mt-6 px-8 py-3 bg-blue-600 text-white rounded-full text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-600/30 hover:scale-105 transition-transform"
+                                className="mt-6 px-8 py-3 bg-blue-600 text-white rounded-full text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-600/30 hover:scale-105 transition-transform flex items-center gap-2"
                             >
-                                Open Full Window
+                                <Play className="w-4 h-4" />
+                                Stream Full Content
                             </a>
                         </div>
                     )}

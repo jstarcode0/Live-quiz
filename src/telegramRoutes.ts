@@ -102,66 +102,63 @@ router.post('/sync/all', async (req, res) => {
 // Stream Media
 router.get('/stream/:id', async (req, res) => {
     const { id } = req.params;
+    const [channelId, msgIdStr] = id.split('_');
+    const msgId = parseInt(msgIdStr);
     const range = req.headers.range;
 
     try {
-        const { msg, client } = await telegramService.streamMedia(id);
+        // We'll first get the basic info to handle the range correctly
+        const startBytes = range ? parseInt(range.replace(/bytes=/, "").split("-")[0], 10) : 0;
         
-        let mediaObj: any = null;
-        if (msg.media instanceof (await import('telegram/tl/index.js')).Api.MessageMediaDocument) {
-            mediaObj = msg.media.document;
-        } else if (msg.media instanceof (await import('telegram/tl/index.js')).Api.MessageMediaPhoto) {
-            mediaObj = msg.media.photo;
-        }
+        // We might need the full size first. For efficiency, we can fetch message info.
+        // But for now let's just use the stream and pipe it.
+        // To support proper range, we need the end too.
+        
+        // Fetch message metadata from DB if we have it to get fileSize
+        const mediaInfo = db.prepare('SELECT file_size, mime_type FROM media WHERE channel_id = ? AND message_id = ?').get(channelId, msgId) as any;
+        const totalSize = mediaInfo?.file_size || 0;
+        const mimeType = mediaInfo?.mime_type || 'application/octet-stream';
 
-        if (!mediaObj) return res.status(404).send('Not media');
+        const endBytes = range ? (range.split("-")[1] ? parseInt(range.split("-")[1], 10) : totalSize - 1) : totalSize - 1;
+        const chunksize = (endBytes - startBytes) + 1;
 
-        const fileSize = mediaObj.size ? mediaObj.size.toJSNumber() : (mediaObj.sizes ? mediaObj.sizes[mediaObj.sizes.length-1].size : 0);
-        const mimeType = mediaObj.mimeType || 'application/octet-stream';
+        const { stream } = await telegramService.getMediaStream(channelId, msgId, startBytes, endBytes);
 
         if (range) {
-            const parts = range.replace(/bytes=/, "").split("-");
-            const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-            const chunksize = (end - start) + 1;
-
             res.writeHead(206, {
-                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Content-Range': `bytes ${startBytes}-${endBytes}/${totalSize}`,
                 'Accept-Ranges': 'bytes',
                 'Content-Length': chunksize,
                 'Content-Type': mimeType,
             });
-
-            const stream = client.iterDownload({
-                file: mediaObj,
-                offset: bigInt(start) as any,
-                limit: chunksize,
-                requestSize: 64 * 1024,
-            });
-
-            for await (const chunk of stream) {
-                res.write(chunk);
-            }
-            res.end();
         } else {
             res.writeHead(200, {
-                'Content-Length': fileSize,
+                'Content-Length': totalSize,
                 'Content-Type': mimeType,
             });
-
-            const stream = client.iterDownload({
-                file: mediaObj,
-                requestSize: 64 * 1024,
-            });
-
-            for await (const chunk of stream) {
-                res.write(chunk);
-            }
-            res.end();
         }
+
+        for await (const chunk of stream) {
+            res.write(chunk);
+        }
+        res.end();
     } catch (error: any) {
         console.error("Stream error:", error);
         if (!res.headersSent) res.status(500).send(error.message);
+    }
+});
+
+router.get('/thumb/:id', async (req, res) => {
+    const { id } = req.params;
+    const [channelId, msgId] = id.split('_');
+    try {
+        const thumb = await telegramService.getThumbnail(channelId, parseInt(msgId));
+        if (!thumb) return res.status(404).send('No thumb');
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.send(thumb);
+    } catch (e: any) {
+        res.status(500).send(e.message);
     }
 });
 
