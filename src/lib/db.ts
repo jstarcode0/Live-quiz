@@ -30,6 +30,29 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS categories (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE,
+    icon TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS main_topics (
+    id TEXT PRIMARY KEY,
+    category_id TEXT,
+    name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(category_id) REFERENCES categories(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS sub_topics (
+    id TEXT PRIMARY KEY,
+    main_topic_id TEXT,
+    name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(main_topic_id) REFERENCES main_topics(id)
+  );
+
   CREATE TABLE IF NOT EXISTS media (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id TEXT,
@@ -38,7 +61,14 @@ db.exec(`
     file_name TEXT,
     file_size INTEGER,
     mime_type TEXT,
-    category TEXT,
+    category TEXT, -- legacy field
+    category_id TEXT,
+    main_topic_id TEXT,
+    sub_topic_id TEXT,
+    clean_title TEXT,
+    part_number INTEGER,
+    teacher TEXT,
+    batch TEXT,
     caption TEXT,
     message_date INTEGER,
     thumb_path TEXT,

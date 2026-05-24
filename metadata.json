@@ -1,6 +1,6 @@
 {
-  "name": "Global Live Quiz System",
-  "description": "A real-time synchronized quiz system with advanced JSON category management and local server storage.",
+  "name": "Telegram Course Platform",
+  "description": "An organized educational library that automatically transforms Telegram media into a structured course platform with intelligent categorization, topic grouping, and PDF linking.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

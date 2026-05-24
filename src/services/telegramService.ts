@@ -3,6 +3,7 @@ import { StringSession } from "telegram/sessions/index.js";
 import { Api } from "telegram/tl/index.js";
 import bigInt from "big-integer";
 import db from "../lib/db.js";
+import { MetadataParser } from './metadataParser.js';
 import fs from "fs";
 import path from "path";
 
@@ -428,18 +429,33 @@ class TelegramService {
 
         if (!mediaId) return;
 
+        // Intelligent Metadata Parsing
+        const metadata = MetadataParser.parse(msg.message || "", fileName);
+        const { categoryId, mainTopicId, subTopicId } = MetadataParser.getOrCreateHierarchy(metadata);
+
         db.prepare(`
-            INSERT OR REPLACE INTO media (channel_id, message_id, media_id, file_name, file_size, mime_type, category, caption, message_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO media (
+                channel_id, message_id, media_id, file_name, file_size, mime_type, 
+                category, category_id, main_topic_id, sub_topic_id, 
+                clean_title, part_number, teacher, batch, caption, message_date
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-            channelId,
-            msg.id,
-            mediaId,
-            fileName,
-            fileSize,
-            mimeType,
+            channelId, 
+            msg.id, 
+            mediaId, 
+            fileName, 
+            fileSize, 
+            mimeType, 
             category,
-            msg.message || "",
+            categoryId,
+            mainTopicId,
+            subTopicId,
+            metadata.cleanTitle,
+            metadata.partNumber || null,
+            metadata.teacher || null,
+            metadata.batch || null,
+            msg.message || "", 
             msg.date
         );
     }
