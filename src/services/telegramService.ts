@@ -173,24 +173,10 @@ class TelegramService {
         }
 
         // Increase limit slightly but keep it reasonable
-        const dialogs = await client.getDialogs({ limit: 100 });
+        const dialogs = await client.getDialogs({ limit: 500 });
         
         // Save entities to cache
-        db.transaction(() => {
-            const stmt = db.prepare(`
-                INSERT OR REPLACE INTO entities (id, access_hash, type, username, title)
-                VALUES (?, ?, ?, ?, ?)
-            `);
-            for (const d of dialogs) {
-                const entity = d.entity;
-                if (entity instanceof Api.Channel || entity instanceof Api.Chat || entity instanceof Api.User) {
-                    const id = d.id.toString();
-                    const accessHash = (entity as any).accessHash ? (entity as any).accessHash.toString() : null;
-                    const type = d.isChannel ? 'channel' : d.isGroup ? 'group' : 'user';
-                    stmt.run(id, accessHash, type, d.name || (entity as any).username, d.title);
-                }
-            }
-        })();
+        this.saveEntitiesMetadata(dialogs);
 
         return dialogs
             .filter(d => d.isChannel || d.isGroup) // Only channels and groups
@@ -211,23 +197,68 @@ class TelegramService {
             });
     }
 
+    private saveEntitiesMetadata(dialogsOrEntities: any[]) {
+        db.transaction(() => {
+            const stmt = db.prepare(`
+                INSERT OR REPLACE INTO entities (id, access_hash, type, username, title)
+                VALUES (?, ?, ?, ?, ?)
+            `);
+            for (const item of dialogsOrEntities) {
+                if (!item) continue;
+                // If it's a dialog, it has .entity
+                const entity = item.entity || item;
+                
+                if (entity.id && (entity instanceof Api.Channel || entity instanceof Api.Chat || entity instanceof Api.User)) {
+                    const id = entity.id.toString();
+                    const accessHash = (entity as any).accessHash ? (entity as any).accessHash.toString() : null;
+                    
+                    let type = 'user';
+                    if (entity instanceof Api.Channel) type = 'channel';
+                    else if (entity instanceof Api.Chat) type = 'group';
+
+                    const username = (entity as any).username || null;
+                    const title = (entity as any).title || (entity as any).firstName || (entity as any).username || id;
+                    
+                    stmt.run(id, accessHash, type, username, title);
+                }
+            }
+        })();
+    }
+
     async resolveEntity(id: string): Promise<any> {
         const client = await this.getClient();
         
         try {
-            // Try built-in getEntity first
+            // 1. Try built-in getEntity (memory cache)
             return await client.getEntity(id);
         } catch (e) {
-            // Fallback to database cache
+            // 2. Fallback to database cache
             const cached = db.prepare('SELECT * FROM entities WHERE id = ?').get(id) as any;
-            if (cached && cached.access_hash) {
-                if (cached.type === 'channel') {
-                    return new Api.InputPeerChannel({ channelId: bigInt(id) as any, accessHash: bigInt(cached.access_hash) as any });
-                } else if (cached.type === 'user') {
-                    return new Api.InputPeerUser({ userId: bigInt(id) as any, accessHash: bigInt(cached.access_hash) as any });
+            if (cached) {
+                try {
+                    if (cached.type === 'channel' && cached.access_hash) {
+                        return new Api.InputPeerChannel({ channelId: bigInt(id) as any, accessHash: bigInt(cached.access_hash) as any });
+                    } else if (cached.type === 'user' && cached.access_hash) {
+                        return new Api.InputPeerUser({ userId: bigInt(id) as any, accessHash: bigInt(cached.access_hash) as any });
+                    } else if (cached.type === 'group') {
+                        return new Api.InputPeerChat({ chatId: bigInt(id) as any });
+                    }
+                } catch (pe) {
+                    console.error("Failed to construct input peer from cache:", pe);
                 }
             }
-            throw e;
+
+            // 3. Auto Encounter: Refresh dialogs to find missing entity
+            console.log(`Entity ${id} not found in cache. Refreshing dialogs to encounter...`);
+            try {
+                // Preload a larger set of dialogs to encounter more entities
+                const dialogs = await client.getDialogs({ limit: 100 });
+                this.saveEntitiesMetadata(dialogs);
+                return await client.getEntity(id);
+            } catch (re) {
+                console.warn(`Could not resolve entity ${id} even after refresh:`, re);
+                throw re;
+            }
         }
     }
 
@@ -268,6 +299,15 @@ class TelegramService {
 
         try {
             const entity = await this.resolveEntity(channelId);
+            
+            // Try to encounter some participants to cache entities (especially for groups/channels)
+            try {
+                const participants = await client.getParticipants(entity, { limit: 100 });
+                if (participants) this.saveEntitiesMetadata(participants);
+            } catch (e) {
+                console.warn(`Could not preload participants for ${channelId}:`, e.message);
+            }
+
             let offsetId = 0;
             let totalIndexed = 0;
             const limit = 100;
@@ -391,6 +431,27 @@ class TelegramService {
         return await this.syncChannelRecursive(id);
     }
 
+    async getMediaInfo(channelId: string, msgId: number) {
+        const client = await this.getClient();
+        const entity = await this.resolveEntity(channelId);
+        const messages = await client.getMessages(entity, { ids: [msgId] });
+        const msg = messages[0];
+        if (!msg || !msg.media) throw new Error("Media not found");
+
+        let size = 0;
+        let mimeType = "application/octet-stream";
+        if (msg.media instanceof Api.MessageMediaDocument) {
+            size = (msg.media.document as Api.Document).size.toJSNumber();
+            mimeType = (msg.media.document as Api.Document).mimeType;
+        } else if (msg.media instanceof Api.MessageMediaPhoto) {
+            const photo = msg.media.photo as Api.Photo;
+            const largest = photo.sizes[photo.sizes.length - 1];
+            if ((largest as any).size) size = (largest as any).size;
+            mimeType = "image/jpeg";
+        }
+        return { size, mimeType };
+    }
+
     async getMediaStream(channelId: string, msgId: number, start: number, end: number) {
         const client = await this.getClient();
         const entity = await this.resolveEntity(channelId);
@@ -414,7 +475,7 @@ class TelegramService {
         const stream = client.iterDownload({
             file: msg.media,
             offset: bigInt(start) as any,
-            limit: (end - start + 1),
+            limit: (end > start) ? (end - start + 1) : undefined,
             requestSize: 1024 * 128
         });
 
@@ -430,10 +491,13 @@ class TelegramService {
 
         try {
             if (msg.media instanceof Api.MessageMediaDocument) {
-                // Try to get thumbnail for document
-                return await client.downloadMedia(msg.media, { thumbKind: "i" }); // 'i' or 'm' are common
+                const thumbs = (msg.media.document as Api.Document).thumbs;
+                const thumb = thumbs ? thumbs[0] : undefined;
+                return await client.downloadMedia(msg.media, { thumb });
             } else if (msg.media instanceof Api.MessageMediaPhoto) {
-                return await client.downloadMedia(msg.media, { thumbKind: "m" });
+                const sizes = (msg.media.photo as Api.Photo).sizes;
+                const thumb = sizes ? sizes[0] : undefined;
+                return await client.downloadMedia(msg.media, { thumb });
             }
             return await client.downloadMedia(msg.media, {});
         } catch (e) {

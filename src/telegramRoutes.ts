@@ -107,21 +107,15 @@ router.get('/stream/:id', async (req, res) => {
     const range = req.headers.range;
 
     try {
-        // We'll first get the basic info to handle the range correctly
         const startBytes = range ? parseInt(range.replace(/bytes=/, "").split("-")[0], 10) : 0;
         
-        // We might need the full size first. For efficiency, we can fetch message info.
-        // But for now let's just use the stream and pipe it.
-        // To support proper range, we need the end too.
+        // Use getMediaInfo to get metadata first
+        const { size: totalSize, mimeType: resolvedMimeType } = await telegramService.getMediaInfo(channelId, msgId);
         
-        // Fetch message metadata from DB if we have it to get fileSize
-        const mediaInfo = db.prepare('SELECT file_size, mime_type FROM media WHERE channel_id = ? AND message_id = ?').get(channelId, msgId) as any;
-        const totalSize = mediaInfo?.file_size || 0;
-        const mimeType = mediaInfo?.mime_type || 'application/octet-stream';
-
         const endBytes = range ? (range.split("-")[1] ? parseInt(range.split("-")[1], 10) : totalSize - 1) : totalSize - 1;
         const chunksize = (endBytes - startBytes) + 1;
 
+        // Fetch the actual stream with proper range
         const { stream } = await telegramService.getMediaStream(channelId, msgId, startBytes, endBytes);
 
         if (range) {
@@ -129,12 +123,12 @@ router.get('/stream/:id', async (req, res) => {
                 'Content-Range': `bytes ${startBytes}-${endBytes}/${totalSize}`,
                 'Accept-Ranges': 'bytes',
                 'Content-Length': chunksize,
-                'Content-Type': mimeType,
+                'Content-Type': resolvedMimeType,
             });
         } else {
             res.writeHead(200, {
                 'Content-Length': totalSize,
-                'Content-Type': mimeType,
+                'Content-Type': resolvedMimeType,
             });
         }
 
