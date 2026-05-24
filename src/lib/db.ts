@@ -12,6 +12,8 @@ db.exec(`
     type TEXT,
     username TEXT,
     title TEXT,
+    serialized_entity BLOB,
+    last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 

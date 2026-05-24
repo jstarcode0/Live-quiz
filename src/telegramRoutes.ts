@@ -102,8 +102,21 @@ router.post('/sync/all', async (req, res) => {
 // Stream Media
 router.get('/stream/:id', async (req, res) => {
     const { id } = req.params;
-    const [channelId, msgIdStr] = id.split('_');
-    const msgId = parseInt(msgIdStr);
+    let channelId: string;
+    let msgId: number;
+
+    if (id.includes('_')) {
+        const parts = id.split('_');
+        channelId = parts[0];
+        msgId = parseInt(parts[1]);
+    } else {
+        // Look up by database ID
+        const media = db.prepare('SELECT channel_id, message_id FROM media WHERE id = ?').get(id) as any;
+        if (!media) return res.status(404).send('Media not found in library');
+        channelId = media.channel_id;
+        msgId = media.message_id;
+    }
+
     const range = req.headers.range;
 
     try {
@@ -144,9 +157,23 @@ router.get('/stream/:id', async (req, res) => {
 
 router.get('/thumb/:id', async (req, res) => {
     const { id } = req.params;
-    const [channelId, msgId] = id.split('_');
+    let channelId: string;
+    let msgId: number;
+
+    if (id.includes('_')) {
+        const parts = id.split('_');
+        channelId = parts[0];
+        msgId = parseInt(parts[1]);
+    } else {
+        // Look up by database ID
+        const media = db.prepare('SELECT channel_id, message_id FROM media WHERE id = ?').get(id) as any;
+        if (!media) return res.status(404).send('Media not found in library');
+        channelId = media.channel_id;
+        msgId = media.message_id;
+    }
+
     try {
-        const thumb = await telegramService.getThumbnail(channelId, parseInt(msgId));
+        const thumb = await telegramService.getThumbnail(channelId, msgId);
         if (!thumb) return res.status(404).send('No thumb');
         res.setHeader('Content-Type', 'image/jpeg');
         res.setHeader('Cache-Control', 'public, max-age=86400');

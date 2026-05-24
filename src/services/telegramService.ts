@@ -198,14 +198,15 @@ class TelegramService {
     }
 
     private saveEntitiesMetadata(dialogsOrEntities: any[]) {
+        if (!dialogsOrEntities || dialogsOrEntities.length === 0) return;
+        
         db.transaction(() => {
             const stmt = db.prepare(`
-                INSERT OR REPLACE INTO entities (id, access_hash, type, username, title)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO entities (id, access_hash, type, username, title, last_seen)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             `);
             for (const item of dialogsOrEntities) {
                 if (!item) continue;
-                // If it's a dialog, it has .entity
                 const entity = item.entity || item;
                 
                 if (entity.id && (entity instanceof Api.Channel || entity instanceof Api.Chat || entity instanceof Api.User)) {
@@ -225,7 +226,27 @@ class TelegramService {
         })();
     }
 
+    async preloadDialogs() {
+        return await this.getDialogs();
+    }
+
+    async preloadParticipants(channelId: string) {
+        const client = await this.getClient();
+        try {
+            const entity = await this.resolveEntity(channelId);
+            const participants = await client.getParticipants(entity, { limit: 200 });
+            this.saveEntitiesMetadata(participants);
+            return true;
+        } catch (e) {
+            console.error(`Failed to preload participants for ${channelId}:`, e);
+            return false;
+        }
+    }
+
+    private lastEncounterTime: number = 0;
+
     async resolveEntity(id: string): Promise<any> {
+        if (!id) throw new Error("No ID provided for entity resolution");
         const client = await this.getClient();
         
         try {
@@ -236,29 +257,34 @@ class TelegramService {
             const cached = db.prepare('SELECT * FROM entities WHERE id = ?').get(id) as any;
             if (cached) {
                 try {
+                    const bigId = bigInt(id);
                     if (cached.type === 'channel' && cached.access_hash) {
-                        return new Api.InputPeerChannel({ channelId: bigInt(id) as any, accessHash: bigInt(cached.access_hash) as any });
+                        return new Api.InputPeerChannel({ channelId: bigId as any, accessHash: bigInt(cached.access_hash) as any });
                     } else if (cached.type === 'user' && cached.access_hash) {
-                        return new Api.InputPeerUser({ userId: bigInt(id) as any, accessHash: bigInt(cached.access_hash) as any });
+                        return new Api.InputPeerUser({ userId: bigId as any, accessHash: bigInt(cached.access_hash) as any });
                     } else if (cached.type === 'group') {
-                        return new Api.InputPeerChat({ chatId: bigInt(id) as any });
+                        return new Api.InputPeerChat({ chatId: bigId as any });
                     }
                 } catch (pe) {
-                    console.error("Failed to construct input peer from cache:", pe);
+                    console.error(`Failed to construct input peer for ${id} from cache:`, pe);
                 }
             }
 
-            // 3. Auto Encounter: Refresh dialogs to find missing entity
-            console.log(`Entity ${id} not found in cache. Refreshing dialogs to encounter...`);
-            try {
-                // Preload a larger set of dialogs to encounter more entities
-                const dialogs = await client.getDialogs({ limit: 100 });
-                this.saveEntitiesMetadata(dialogs);
-                return await client.getEntity(id);
-            } catch (re) {
-                console.warn(`Could not resolve entity ${id} even after refresh:`, re);
-                throw re;
+            // 3. Rate-limited Auto Encounter
+            const now = Date.now();
+            if (now - this.lastEncounterTime > 60000) { // Only refresh once per minute maximum
+                this.lastEncounterTime = now;
+                console.log(`Entity ${id} not found. Refreshing dialogs to encounter...`);
+                try {
+                    const dialogs = await client.getDialogs({ limit: 100 });
+                    this.saveEntitiesMetadata(dialogs);
+                    return await client.getEntity(id);
+                } catch (re) {
+                    console.warn(`Auto-encounter failed for ${id}:`, (re as Error).message);
+                }
             }
+            
+            throw new Error(`Could not find input entity for ${id}. Please ensure the chat has been encountered or synced.`);
         }
     }
 
@@ -316,15 +342,26 @@ class TelegramService {
             console.log(`Starting deep sync for: ${channel.title} (${channelId})`);
 
             while (hasMore) {
-                const messages: Api.Message[] = await client.getMessages(entity, {
+                // Use messages.GetHistory directly to get full response with users and chats
+                const response = await client.invoke(new Api.messages.GetHistory({
+                    peer: entity,
                     limit,
-                    offsetId: offsetId,
-                }) as any;
+                    offsetId,
+                    addOffset: 0,
+                    hash: bigInt(0) as any,
+                    maxId: 0,
+                    minId: 0
+                })) as any;
 
+                const messages = response.messages || [];
                 if (messages.length === 0) {
                     hasMore = false;
                     break;
                 }
+
+                // Save encountered users and chats to persistent cache
+                if (response.users) this.saveEntitiesMetadata(response.users);
+                if (response.chats) this.saveEntitiesMetadata(response.chats);
 
                 // Process batch
                 db.transaction(() => {
