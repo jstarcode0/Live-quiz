@@ -302,7 +302,7 @@ class TelegramService {
     }
 
     async getChannels() {
-        return db.prepare('SELECT * FROM channels ORDER BY updated_at DESC').all() as any[];
+        return db.prepare('SELECT * FROM channels ORDER BY created_at DESC').all() as any[];
     }
 
     async syncAllActive() {

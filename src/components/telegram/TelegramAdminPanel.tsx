@@ -39,11 +39,14 @@ export default function TelegramAdminPanel() {
     const fetchChannels = async () => {
         try {
             const res = await fetch('/api/telegram/channels');
+            if (!res.ok) throw new Error('Failed to fetch channels');
             const data = await res.json();
             if (Array.isArray(data)) {
                 setChannels(data);
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("Fetch Channels Error:", e);
+        }
     };
 
     const fetchStats = async () => {
@@ -90,7 +93,7 @@ export default function TelegramAdminPanel() {
 
     const addChannelFromDialog = async (dialog: any) => {
         try {
-            await fetch('/api/telegram/channels/add', {
+            const res = await fetch('/api/telegram/channels/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -100,9 +103,16 @@ export default function TelegramAdminPanel() {
                     type: dialog.type 
                 })
             });
-            fetchStats();
-            fetchChannels();
-        } catch (e) {}
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Failed to add channel');
+            }
+            await fetchStats();
+            await fetchChannels();
+        } catch (e: any) {
+            console.error("Add Channel Error:", e);
+            alert(`Error: ${e.message}`);
+        }
     };
 
     const toggleChannel = async (id: string, active: boolean) => {
